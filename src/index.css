@@ -1,0 +1,79 @@
+:root {
+  --color-bg-primary:   #ffffff;
+  --color-bg-secondary: #f7f7f6;
+  --color-bg-tertiary:  #f1f0ec;
+  --color-bg-info:      #e6f1fb;
+  --color-bg-danger:    #fcebeb;
+  --color-bg-warning:   #faeeda;
+  --color-bg-success:   #eaf3de;
+
+  --color-text-primary:   #1a1a18;
+  --color-text-secondary: #5f5e5a;
+  --color-text-tertiary:  #88877f;
+  --color-text-info:      #185fa5;
+  --color-text-danger:    #a32d2d;
+  --color-text-warning:   #854f0b;
+  --color-text-success:   #3b6d11;
+
+  --color-border-tertiary: rgba(0,0,0,0.15);
+  --color-border-secondary: rgba(0,0,0,0.30);
+  --color-border-info:    #85b7eb;
+  --color-border-danger:  #f09595;
+  --color-border-warning: #fac775;
+  --color-border-success: #c0dd97;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --blue:   #3266ad;
+  --teal:   #1d9e75;
+  --purple: #7f77dd;
+  --amber:  #ef9f27;
+  --red:    #e24b4a;
+  --red-dk: #a32d2d;
+  --green:  #639922;
+  --gray:   #888780;
+
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Fira Code', monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg-primary:   #1c1c1a;
+    --color-bg-secondary: #242422;
+    --color-bg-tertiary:  #2a2a28;
+    --color-bg-info:      #0c2540;
+    --color-bg-danger:    #2e0f0f;
+    --color-bg-warning:   #2e1e04;
+    --color-bg-success:   #122407;
+    --color-text-primary:   #f0efe9;
+    --color-text-secondary: #b4b2a9;
+    --color-text-tertiary:  #888780;
+    --color-text-info:      #85b7eb;
+    --color-text-danger:    #f09595;
+    --color-text-warning:   #fac775;
+    --color-text-success:   #c0dd97;
+    --color-border-tertiary:  rgba(255,255,255,0.12);
+    --color-border-secondary: rgba(255,255,255,0.25);
+    --color-border-info:    #185fa5;
+    --color-border-danger:  #a32d2d;
+    --color-border-warning: #854f0b;
+    --color-border-success: #3b6d11;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  background: var(--color-bg-tertiary);
+  font-family: var(--font-sans);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button { cursor: pointer; font-family: inherit; }
