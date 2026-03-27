@@ -20,16 +20,18 @@ const TABS = [
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview')
+  const [fiscalYear, setFiscalYear] = useState(25)
+  const [period, setPeriod] = useState(6)
   return (
     <div className="app">
-      <Header />
+      <Header fiscalYear={fiscalYear} period={period} onFiscalYearChange={setFiscalYear} onPeriodChange={setPeriod} />
       <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} />
       <main className="panel">
-        {activeTab === 'overview'     && <OverviewTab />}
-        {activeTab === 'pnl'          && <PnLTab />}
-        {activeTab === 'variance'     && <VarianceTab />}
-        {activeTab === 'forecast'     && <ForecastTab />}
-        {activeTab === 'balancesheet' && <BalanceSheetTab />}
+        {activeTab === 'overview'     && <OverviewTab fiscalYear={fiscalYear} period={period} />}
+        {activeTab === 'pnl'          && <PnLTab fiscalYear={fiscalYear} period={period} />}
+        {activeTab === 'variance'     && <VarianceTab fiscalYear={fiscalYear} period={period} />}
+        {activeTab === 'forecast'     && <ForecastTab fiscalYear={fiscalYear} period={period} />}
+        {activeTab === 'balancesheet' && <BalanceSheetTab fiscalYear={fiscalYear} period={period} />}
         {activeTab === 'agentchat'    && <AgentChatTab />}
       </main>
     </div>

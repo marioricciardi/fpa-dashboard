@@ -3,7 +3,7 @@ import ConfidenceInfo from './ConfidenceInfo.jsx'
 
 export default function ChartCard({
   title, subtitle, fn, toolResult,
-  legend = [], height = 220, children
+  legend = [], height = 220, unavailable = false, children
 }) {
   const lowConf = toolResult?._low_confidence ?? false
   const rSq     = toolResult?.r_squared ?? null
@@ -26,9 +26,11 @@ export default function ChartCard({
         </div>
       )}
       <div className="chart-canvas-wrapper" style={{ height }}>
-        {children}
+        {unavailable
+          ? <div className="chart-unavailable">Can't load</div>
+          : children}
       </div>
-      {toolResult && <ConfidenceInfo toolResult={toolResult} />}
+      {!unavailable && toolResult && <ConfidenceInfo toolResult={toolResult} />}
     </div>
   )
 }
