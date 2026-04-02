@@ -10,13 +10,13 @@
 //   { labels: string[], datasets: ChartDataset[] }
 
 const PALETTE = {
-  blue:   { solid: '#3266ad', alpha: 'rgba(50,102,173,0.18)',  border: '#3266ad' },
-  teal:   { solid: '#1d9e75', alpha: 'rgba(29,158,117,0.20)',  border: '#1d9e75' },
-  purple: { solid: '#7f77dd', alpha: 'rgba(127,119,221,0.18)', border: '#7f77dd' },
+  blue:   { solid: '#7C3AED', alpha: 'rgba(124,58,237,0.18)',  border: '#7C3AED' },
+  teal:   { solid: '#16a34a', alpha: 'rgba(22,163,74,0.20)',   border: '#16a34a' },
+  purple: { solid: '#a78bfa', alpha: 'rgba(167,139,250,0.18)', border: '#a78bfa' },
   amber:  { solid: '#ef9f27', alpha: 'rgba(239,159,39,0.22)',  border: '#ef9f27' },
   red:    { solid: '#e24b4a', alpha: 'rgba(226,75,74,0.22)',   border: '#e24b4a' },
-  green:  { solid: '#639922', alpha: 'rgba(99,153,34,0.22)',   border: '#639922' },
-  gray:   { solid: '#888780', alpha: 'rgba(136,135,128,0.18)', border: '#888780' },
+  green:  { solid: '#16a34a', alpha: 'rgba(22,163,74,0.22)',   border: '#16a34a' },
+  gray:   { solid: '#8887a0', alpha: 'rgba(136,135,160,0.18)', border: '#8887a0' },
 }
 
 // Ordered color assignment for multi-series charts

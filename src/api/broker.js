@@ -58,33 +58,37 @@ export async function callTool(toolName, params = {}) {
 }
 
 /**
- * chatQuery(message, history)
+ * chatQuery(message, history, options)
  *
- * Sends a natural-language query to the fpa-broker SmartRouter / intent-router-ensemble.
- * In mock mode returns a canned response after a simulated delay.
- * In live mode POSTs to fpa-broker's OpenAI-compatible /v1/chat/completions endpoint.
+ * Sends a natural-language query to fpa-broker's OpenAI-compatible
+ * /v1/chat/completions endpoint using SSE streaming (matching LibreChat style).
  *
- * Returns: { answer, sources, trace, chart_data?, chart_type?, chart_title? }
+ * options.onDelta(partialText) — called as content arrives for live display.
+ *
+ * Returns: { answer, sources, trace, charts }
  */
-export async function chatQuery(message, history = []) {
+export async function chatQuery(message, history = [], { onDelta } = {}) {
   if (USE_MOCK) {
     await new Promise(r => setTimeout(r, 1200))
     return (await import('../data/chatMock.js')).getMockResponse(message)
   }
 
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(BROKER_API_KEY && { Authorization: `Bearer ${BROKER_API_KEY}` }),
+  }
+
+  const body = JSON.stringify({
+    model: 'openai.gpt-4.1',
+    messages: [
+      ...history.map(h => ({ role: h.role, content: h.content })),
+      { role: 'user', content: message },
+    ],
+    stream: true,
+  })
+
   const res = await fetch(`${BROKER_URL}/v1/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(BROKER_API_KEY && { Authorization: `Bearer ${BROKER_API_KEY}` }),
-    },
-    body: JSON.stringify({
-      model: 'openai.gpt-4.1',
-      messages: [
-        ...history.map(h => ({ role: h.role, content: h.content })),
-        { role: 'user', content: message },
-      ],
-    }),
+    method: 'POST', headers, body,
   })
 
   if (!res.ok) {
@@ -92,8 +96,154 @@ export async function chatQuery(message, history = []) {
     throw new Error(`broker chat error ${res.status}: ${text}`)
   }
 
-  const data = await res.json()
-  // Transform OpenAI-compatible response to dashboard shape
-  const content = data.choices?.[0]?.message?.content ?? ''
-  return { answer: content, sources: [], trace: data }
+  // ── Read SSE stream ──────────────────────────────────────
+  let fullContent = ''
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+
+    const lines = buffer.split('\n')
+    buffer = lines.pop() // keep incomplete last line
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed.startsWith('data: ')) continue
+      const payload = trimmed.slice(6)
+      if (payload === '[DONE]') continue
+      try {
+        const chunk = JSON.parse(payload)
+        const delta = chunk.choices?.[0]?.delta?.content
+        if (delta) {
+          fullContent += delta
+          onDelta?.(fullContent)
+        }
+      } catch { /* skip malformed chunks */ }
+    }
+  }
+
+  // If stream yielded nothing (broker may have returned non-streaming JSON)
+  if (!fullContent && res.headers.get('content-type')?.includes('application/json')) {
+    try {
+      const data = JSON.parse(buffer || await res.text())
+      fullContent = data.choices?.[0]?.message?.content ?? ''
+    } catch { /* ignore */ }
+  }
+
+  return parseBrokerContent(fullContent)
+}
+
+// ── Artifact parser ────────────────────────────────────────────
+// The broker embeds execution-trace and chart React artefacts in
+// :::artifact{...}\n```tsx\n...```\n::: blocks within the content string.
+
+function parseBrokerContent(content) {
+  if (!content) return { answer: '', sources: [], trace: null, charts: [] }
+
+  const artifactRe = /:::artifact\{([^}]*)\}\n```tsx\n([\s\S]*?)```\n:::/g
+
+  let trace = null
+  const charts = []
+  let cleanText = content
+
+  let match
+  while ((match = artifactRe.exec(content)) !== null) {
+    const attrs = match[1]
+    const code  = match[2]
+    const id    = attrs.match(/identifier="([^"]+)"/)?.[1] || ''
+    const title = attrs.match(/title="([^"]+)"/)?.[1] || ''
+
+    cleanText = cleanText.replace(match[0], '')
+
+    if (id === 'fpa-exec-trace') {
+      trace = parseTraceArtifact(code)
+    } else if (id.startsWith('fpa-chart-')) {
+      const cd = parseChartArtifact(code, title)
+      if (cd) charts.push(cd)
+    }
+  }
+
+  // Extract sources from trace agent names
+  const sources = trace?.agents?.map(a => a.name) ?? []
+
+  return {
+    answer: cleanText.trim(),
+    sources,
+    trace,
+    charts,
+    // backward-compat single chart
+    chart_data:  charts[0]?.chart_data  ?? null,
+    chart_type:  charts[0]?.chart_type  ?? null,
+    chart_title: charts[0]?.chart_title ?? null,
+  }
+}
+
+function parseTraceArtifact(code) {
+  const rowsMatch     = code.match(/const rows\s*=\s*(\[[\s\S]*?\]);/)
+  const timelineMatch = code.match(/const timelineData\s*=\s*(\[[\s\S]*?\]);/)
+  const totalMatch    = code.match(/const TOTAL\s*=\s*(\d+);/)
+
+  if (!rowsMatch) return null
+
+  try {
+    const rows = JSON.parse(rowsMatch[1])
+    const totalMs = totalMatch ? parseInt(totalMatch[1], 10) : 0
+
+    const mapStatus = s => s === 'fail' ? 'error' : s === 'warn' ? 'warn' : 'ok'
+
+    const routing = rows.filter(r => r.layer === 'routing').map(r => ({
+      name: r.node, detail: r.detail, duration_ms: r.duration_ms,
+      status: mapStatus(r.status), type: 'routing',
+    }))
+    const agents = rows.filter(r => r.layer === 'domain').map(r => ({
+      name: r.node, detail: r.detail, duration_ms: r.duration_ms,
+      status: mapStatus(r.status), type: 'agent',
+      r2: r.r2 ?? null, warn: r.warn ?? false,
+    }))
+    const post = rows.filter(r => r.layer === 'post-processing').map(r => ({
+      name: r.node, detail: r.detail, duration_ms: r.duration_ms,
+      status: mapStatus(r.status), type: 'post',
+    }))
+
+    return { routing, agents, post, nodes: rows.length, total_ms: totalMs }
+  } catch {
+    return null
+  }
+}
+
+function parseChartArtifact(code, title) {
+  // Extract the data array from `const data = [...]`
+  const dataMatch = code.match(/const data\s*=\s*\[\n([\s\S]*?)\];/)
+  if (!dataMatch) return null
+
+  try {
+    // The broker emits JS object literals with some unquoted keys.
+    // Fix them: { name: "x" } → { "name": "x" }
+    let raw = dataMatch[1]
+    raw = raw.replace(/(\{|,)\s*(\w+)\s*:/g, '$1 "$2":')
+    const data = JSON.parse(`[${raw}]`)
+
+    const labels = data.map(d => d.name)
+    const series = {}
+    for (const d of data) {
+      for (const [key, val] of Object.entries(d)) {
+        if (key === 'name') continue
+        if (!series[key]) series[key] = []
+        series[key].push(val)
+      }
+    }
+
+    // Determine chart type from component usage
+    const hasBar  = /\bBar\b/.test(code) && !/\bBarChart\b/.test(code.split('ComposedChart')[0] || '')
+    const hasLine = /\bLine\b/.test(code)
+    const chart_type = (hasBar && hasLine) ? 'composed' : hasLine ? 'line' : 'bar'
+
+    return { chart_data: { labels, series }, chart_type, chart_title: title }
+  } catch {
+    return null
+  }
 }

@@ -17,3 +17,6 @@ Thumbs.db
 
 # fpa_agent backend (separate project)
 fpa_agent/
+
+# Scratch files
+scratch/

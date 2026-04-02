@@ -9,11 +9,25 @@
 //   error   — Error object or null
 //   refetch — call to re-invoke the tool (bypasses cache)
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react'
 import { callTool } from '../api/broker.js'
 
 // Module-level cache so data survives tab unmount/remount
 const _cache = new Map()
+
+// ── Global loading tracker ──────────────────────────────────
+let _inflight = 0
+const _listeners = new Set()
+function _notify() { for (const fn of _listeners) fn() }
+function _inc() { _inflight++; _notify() }
+function _dec() { _inflight = Math.max(0, _inflight - 1); _notify() }
+function _subscribe(cb) { _listeners.add(cb); return () => _listeners.delete(cb) }
+function _getSnapshot() { return _inflight > 0 }
+
+/** Returns true while any useTool call is in-flight. */
+export function useGlobalLoading() {
+  return useSyncExternalStore(_subscribe, _getSnapshot)
+}
 
 export function useTool(toolName, params = {}) {
   const [data,    setData]    = useState(null)
@@ -40,6 +54,7 @@ export function useTool(toolName, params = {}) {
   const fetchFromServer = useCallback(async () => {
     setLoading(true)
     setError(null)
+    _inc()
     try {
       const result = await callTool(toolName, params)
       const key = cacheKeyRef.current
@@ -50,6 +65,7 @@ export function useTool(toolName, params = {}) {
       setData(null)
     } finally {
       setLoading(false)
+      _dec()
     }
   }, [toolName, paramsKey, applyResult]) // eslint-disable-line react-hooks/exhaustive-deps
 

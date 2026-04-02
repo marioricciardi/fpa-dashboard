@@ -1,45 +1,20 @@
-import {
-  Chart as ChartJS, CategoryScale, LinearScale, BarElement,
-  ArcElement, Tooltip, Legend
-} from 'chart.js'
-import ChartDataLabels from 'chartjs-plugin-datalabels'
-import { Bar, Doughnut } from 'react-chartjs-2'
-
-import KpiStrip  from '../components/KpiStrip.jsx'
-import ChartCard from '../components/ChartCard.jsx'
-import MetricCard from '../components/MetricCard.jsx'
-import { useTool } from '../hooks/useTool.js'
+// BalanceSheetTab — V4 recharts + PanelGrid + KPIChip
 import { useMemo } from 'react'
+import {
+  BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer,
+} from 'recharts'
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend)
-
-const TC = '#888780', GC = 'rgba(0,0,0,0.06)'
-const BASE = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+import { KPIRail } from '../components/KPIChip.jsx'
+import PanelGrid from '../components/PanelGrid.jsx'
+import { AlertRow } from '../components/ChartPrimitives.jsx'
+import { useTool } from '../hooks/useTool.js'
+import { C, GRID, XAXIS, YAXIS, TT, TH, TD, TDL, fd, usd, pctFmt } from '../utils/chartConstants.js'
 
 /* ── helpers ───────────────────────────────────────────────────── */
-
-function usd(v) {
-  if (v == null) return '$0'
-  const abs = Math.abs(v)
-  if (abs >= 1e6) return `$${(v / 1e6).toFixed(2)}M`
-  if (abs >= 1e3) return `$${(v / 1e3).toFixed(1)}K`
-  return `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
-function pct(v, digits = 2) {
-  if (v == null) return 'N/A'
-  return `${v.toFixed(digits)}%`
-}
-
-function ratio(v) {
-  if (v == null) return 'N/A'
-  return v.toFixed(2)
-}
-
-/** Navigate the actual API response to the balance_sheet sub-object */
+function ratio(v) { return v == null ? 'N/A' : v.toFixed(2) }
 function bs(r) { return r?.balance_sheet ?? r ?? {} }
-
-/** Group account lines by account_desc, summing balances */
 function groupAccounts(accounts) {
   const map = {}
   for (const a of (accounts || [])) {
@@ -49,123 +24,27 @@ function groupAccounts(accounts) {
   return Object.entries(map).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
 }
 
-/* ── KPI strip (CFO-level summary) ──────────────────────────── */
-
-function buildKpis(r) {
-  const b = bs(r)
-  const ca = b.assets?.current_assets?.total ?? 0
-  const nca = b.assets?.non_current_assets?.total ?? 0
-  const cl = b.liabilities?.current_liabilities?.total ?? 0
-  const ncl = b.liabilities?.non_current_liabilities?.total ?? 0
-  const eq = b.equity?.total ?? 0
-  const totalA = b.total_assets ?? (ca + nca)
-  const totalL = b.total_liabilities ?? (cl + ncl)
-  const rat = r?.ratios ?? {}
-  const wc = ca - cl
-
-  return [
-    { label: 'Total Assets',      value: usd(totalA),             delta: `CA: ${usd(ca)} · NCA: ${usd(nca)}`, sentiment: 'neu' },
-    { label: 'Total Liabilities',  value: usd(totalL),             delta: `CL: ${usd(cl)} · LT: ${usd(ncl)}`, sentiment: 'neu' },
-    { label: 'Total Equity',      value: usd(eq),                 delta: eq === 0 ? 'No equity posted' : undefined, sentiment: eq > 0 ? 'pos' : 'warn' },
-    { label: 'Working Capital',   value: usd(wc),                 delta: `CA − CL · ${wc >= 0 ? 'Positive' : '⚠ Negative'}`, sentiment: wc >= 0 ? 'pos' : 'neg' },
-    { label: 'Current Ratio',     value: ratio(rat.current_ratio), delta: rat.current_ratio != null && rat.current_ratio > 1.5 ? 'Healthy (>1.5)' : '⚠ Below 1.5', sentiment: rat.current_ratio != null && rat.current_ratio > 1.5 ? 'pos' : 'warn' },
-  ]
-}
-
-/* ── A = L + E stacked bar ──────────────────────────────────── */
-
-function aleBarData(r) {
-  const b = bs(r)
-  const ca = b.assets?.current_assets?.total ?? 0
-  const nca = b.assets?.non_current_assets?.total ?? 0
-  const cl = b.liabilities?.current_liabilities?.total ?? 0
-  const ncl = b.liabilities?.non_current_liabilities?.total ?? 0
-  const eq = b.equity?.total ?? 0
-  return {
-    labels: ['Assets', 'Liabilities + Equity'],
-    datasets: [
-      { label: 'Current Assets',     data: [ca, 0],  backgroundColor: 'rgba(50,102,173,0.35)',  borderColor: '#3266ad', borderWidth: 1, borderRadius: 3 },
-      { label: 'Non-Current Assets', data: [nca, 0], backgroundColor: 'rgba(50,102,173,0.15)',  borderColor: '#3266ad', borderWidth: 1, borderRadius: 3 },
-      { label: 'Current Liabilities', data: [0, cl], backgroundColor: 'rgba(226,75,74,0.35)',   borderColor: '#e24b4a', borderWidth: 1, borderRadius: 3 },
-      { label: 'Non-Current Liabilities', data: [0, ncl], backgroundColor: 'rgba(226,75,74,0.15)', borderColor: '#e24b4a', borderWidth: 1, borderRadius: 3 },
-      { label: 'Equity',              data: [0, eq], backgroundColor: 'rgba(127,119,221,0.35)', borderColor: '#7f77dd', borderWidth: 1, borderRadius: 3 },
-    ],
-  }
-}
-
-/* ── Current assets doughnut (from actual accounts) ─────────── */
-
-function assetDoughnut(r) {
-  const accts = bs(r).assets?.current_assets?.accounts || []
-  const grouped = groupAccounts(accts).slice(0, 8) // top 8
-  const labels = grouped.map(([k]) => k)
-  const data = grouped.map(([, v]) => v)
-  const COLORS = ['#3266ad','#1d9e75','#7f77dd','#ef9f27','#e24b4a','#639922','#888780','#b08d57']
-  return {
-    labels,
-    datasets: [{
-      data,
-      backgroundColor: COLORS.slice(0, data.length),
-      borderWidth: 0, hoverOffset: 4,
-    }],
-  }
-}
-
-/* ── Trend bar (current vs prior year) ─────────────────────── */
-
-function trendBarData(r, fiscalYear) {
-  const trend = r?.trend || []
-  if (trend.length === 0) return null
-  const labels = trend.map(t => t.period_label)
-  return {
-    labels,
-    datasets: [
-      { label: 'Total Assets', data: trend.map(t => t.total_assets ?? 0),      backgroundColor: 'rgba(50,102,173,0.3)',  borderColor: '#3266ad', borderWidth: 1.5, borderRadius: 3 },
-      { label: 'Total Liabilities', data: trend.map(t => t.total_liabilities ?? 0), backgroundColor: 'rgba(226,75,74,0.3)', borderColor: '#e24b4a', borderWidth: 1.5, borderRadius: 3 },
-      { label: 'Total Equity', data: trend.map(t => t.total_equity ?? 0),      backgroundColor: 'rgba(127,119,221,0.3)', borderColor: '#7f77dd', borderWidth: 1.5, borderRadius: 3 },
-    ],
-  }
-}
-
-/* ── Account detail table (for controllers) ────────────────── */
-
-const TH = { fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)', textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--color-border-tertiary)', textTransform: 'uppercase', letterSpacing: '0.3px' }
-const TD = { fontSize: 11, fontFamily: 'var(--font-mono)', padding: '3px 8px', borderBottom: '0.5px solid var(--color-border-tertiary)' }
+const COLORS = [C.blue, C.teal, C.purple, C.amber, C.red, C.lime, C.gray, '#b08d57']
 
 function AccountTable({ title, accounts, color }) {
   if (!accounts || accounts.length === 0) return null
   const sorted = [...accounts].sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))
   return (
-    <div style={{ background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)', border: '0.5px solid var(--color-border-tertiary)', overflow: 'hidden' }}>
-      <div style={{ padding: '8px 10px', fontSize: 11, fontWeight: 500, borderBottom: '0.5px solid var(--color-border-tertiary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ width: 8, height: 8, borderRadius: 2, background: color, display: 'inline-block' }} />
-        {title}
-        <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>{accounts.length} accounts</span>
-      </div>
-      <div style={{ maxHeight: 200, overflowY: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              <th style={TH}>Obj</th>
-              <th style={TH}>Sub</th>
-              <th style={TH}>Description</th>
-              <th style={TH}>BU</th>
-              <th style={{ ...TH, textAlign: 'right' }}>Balance</th>
+    <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead><tr>{['Obj','Sub','Description','BU','Balance'].map(h => <th key={h} style={h === 'Balance' ? TH : { ...TH, ...TDL }}>{h}</th>)}</tr></thead>
+        <tbody>
+          {sorted.map((a, i) => (
+            <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : C.surf }}>
+              <td style={TDL}>{a.object_account}</td>
+              <td style={TDL}>{a.subsidiary}</td>
+              <td style={TDL}>{a.account_desc}</td>
+              <td style={TDL}>{a.business_unit}</td>
+              <td style={{ ...TD, fontWeight: 500, color: a.balance < 0 ? C.red : undefined }}>{usd(a.balance)}</td>
             </tr>
-          </thead>
-          <tbody>
-            {sorted.map((a, i) => (
-              <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : 'var(--color-bg-primary)' }}>
-                <td style={TD}>{a.object_account}</td>
-                <td style={TD}>{a.subsidiary}</td>
-                <td style={TD}>{a.account_desc}</td>
-                <td style={TD}>{a.business_unit}</td>
-                <td style={{ ...TD, textAlign: 'right', fontWeight: 500, color: a.balance < 0 ? 'var(--red)' : undefined }}>{usd(a.balance)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -179,131 +58,123 @@ export default function BalanceSheetTab({ fiscalYear = 25, period = 6 }) {
   const r  = ok ? toolResult.result : null
 
   const b = ok ? bs(r) : null
-  const meta = r?.metadata ?? {}
   const rat  = r?.ratios ?? {}
+  const meta = r?.metadata ?? {}
   const balanced = b?.balanced ?? meta?.balanced
 
   const fyLabel   = `FY20${String(fiscalYear).padStart(2, '0')}`
   const prevLabel = `FY20${String(fiscalYear - 1).padStart(2, '0')}`
 
-  const SCALES_USD = {
-    x: { stacked: true, ticks: { color: TC, font: { size: 10 } }, grid: { color: GC } },
-    y: { stacked: true, ticks: { color: TC, font: { size: 10 }, callback: v => usd(v) }, grid: { color: GC } },
-  }
-  const SCALES_TREND = {
-    x: { ticks: { color: TC, font: { size: 10 } }, grid: { color: GC } },
-    y: { ticks: { color: TC, font: { size: 10 }, callback: v => usd(v) }, grid: { color: GC } },
-  }
+  const ca = b?.assets?.current_assets?.total ?? 0
+  const nca = b?.assets?.non_current_assets?.total ?? 0
+  const cl = b?.liabilities?.current_liabilities?.total ?? 0
+  const ncl = b?.liabilities?.non_current_liabilities?.total ?? 0
+  const eq = b?.equity?.total ?? 0
+  const totalA = b?.total_assets ?? (ca + nca)
+  const totalL = b?.total_liabilities ?? (cl + ncl)
+  const wc = ca - cl
 
-  if (loading && !ok) return <div className="tab-loading">Loading balance sheet data…</div>
+  // ── A=L+E stacked bar data ──
+  const aleData = [
+    { name: 'Assets', 'Current Assets': ca, 'Non-Current Assets': nca },
+    { name: 'Liab + Equity', 'Current Liabilities': cl, 'Non-Current Liabilities': ncl, 'Equity': eq },
+  ]
 
-  const trendData = ok ? trendBarData(r, fiscalYear) : null
+  // ── Current asset donut data ──
+  const accts = b?.assets?.current_assets?.accounts || []
+  const grouped = groupAccounts(accts).slice(0, 8)
+  const donutData = grouped.map(([k, v]) => ({ name: k, value: Math.abs(v) }))
 
-  return (
-    <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-        <button onClick={refetch} disabled={loading} style={{ fontSize: 11, padding: '4px 12px', borderRadius: 4, border: '1px solid var(--color-border-tertiary)', background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>{loading ? 'Refreshing…' : '↻ Refresh Data'}</button>
-      </div>
-      {ok && <KpiStrip items={buildKpis(r)} cols={5} />}
+  // ── Trend data ──
+  const trend = r?.trend || []
+  const trendData = trend.map(t => ({ name: t.period_label, Assets: t.total_assets ?? 0, Liabilities: t.total_liabilities ?? 0, Equity: t.total_equity ?? 0 }))
 
-      {/* Row 1: A=L+E stacked bar + Asset composition doughnut */}
-      <div className="chart-grid chart-grid--21">
-        <ChartCard
-          title="A = L + E — Balance Sheet Components"
-          subtitle={`${fyLabel} P${period} · Source: F0902 (A/L/Q ledger types) + F0901 account master`}
-          fn="fn-balancesheet-analysis"
-          toolResult={toolResult}
-          height={220}
-          unavailable={!ok}
-          legend={[
-            { color: '#3266ad', label: 'Assets' },
-            { color: '#e24b4a', label: 'Liabilities' },
-            { color: '#7f77dd', label: 'Equity' },
-          ]}
-        >
-          {ok && <Bar data={aleBarData(r)} options={{ ...BASE, scales: SCALES_USD, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${usd(ctx.raw)}` } } } }} />}
-        </ChartCard>
+  // ── Chips ──
+  const chips = [
+    { label: 'Total Assets', value: usd(totalA), sub: `CA ${usd(ca)} + NCA ${usd(nca)}` },
+    { label: 'Total Liabilities', value: usd(totalL), sub: `CL ${usd(cl)} + LT ${usd(ncl)}` },
+    { label: 'Total Equity', value: usd(eq), sub: eq > 0 ? 'Positive' : 'Warning', ok: eq > 0, warn: eq <= 0 },
+    { label: 'Working Capital', value: usd(wc), sub: `CA − CL`, ok: wc >= 0, danger: wc < 0 },
+    { label: 'Current Ratio', value: ratio(rat.current_ratio), sub: rat.current_ratio > 1.5 ? 'Healthy' : '< 1.5', ok: rat.current_ratio > 1.5, warn: rat.current_ratio <= 1.5 },
+    { label: 'Quick Ratio', value: ratio(rat.quick_ratio), sub: rat.quick_ratio > 1 ? 'Healthy' : '< 1.0', ok: rat.quick_ratio > 1 },
+    { label: 'Debt / Assets', value: rat.debt_to_assets != null ? pctFmt(rat.debt_to_assets * 100) : 'N/A', sub: 'TL / TA', ok: rat.debt_to_assets < 0.5 },
+    { label: 'Debt / Equity', value: ratio(rat.debt_to_equity), sub: 'TL / TE', ok: rat.debt_to_equity < 1 },
+    { label: 'Equity Multiplier', value: ratio(rat.equity_multiplier), sub: 'TA / TE' },
+    { label: 'Balance Check', value: balanced === true ? 'BALANCED ✓' : balanced === false ? 'IMBALANCE' : '—', sub: balanced === false ? usd(meta.imbalance_amount) : 'A − (L+E) = 0', ok: balanced === true, danger: balanced === false },
+  ]
 
-        <ChartCard
-          title="Current Asset Composition"
-          subtitle={`Top accounts by balance · ${fyLabel} P${period}`}
-          fn="fn-balancesheet-analysis"
-          height={200}
-          unavailable={!ok}
-        >
-          {ok && <Doughnut
-            data={assetDoughnut(r)}
-            plugins={[ChartDataLabels]}
-            options={{
-              responsive: true, maintainAspectRatio: false, cutout: '55%',
-              plugins: {
-                legend: { display: true, position: 'right', labels: { color: TC, font: { size: 9 }, boxWidth: 9, padding: 6 } },
-                tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${usd(ctx.raw)}` } },
-                datalabels: {
-                  color: TC, font: { size: 9, weight: 500 }, anchor: 'end', align: 'end', offset: 2,
-                  formatter: v => usd(v),
-                  display: ctx => Math.abs(ctx.dataset.data[ctx.dataIndex]) > 0,
-                },
-              },
-            }}
-          />}
-        </ChartCard>
-      </div>
+  if (loading && !ok) return <div className="tab-loading">Loading balance sheet…</div>
 
-      {ok && (
-        <>
-          {/* Row 2: Financial ratios + Balance check */}
-          <div className="chart-grid chart-grid--3" style={{ marginTop: 11 }}>
-            <MetricCard label="Current Ratio"       value={ratio(rat.current_ratio)}   delta="Current Assets / Current Liabilities"                     sentiment={rat.current_ratio != null && rat.current_ratio > 1.5 ? 'pos' : 'warn'} />
-            <MetricCard label="Quick Ratio"         value={ratio(rat.quick_ratio)}     delta="(CA − Inventory) / CL"                                    sentiment={rat.quick_ratio != null && rat.quick_ratio > 1.0 ? 'pos' : 'warn'} />
-            <MetricCard label="Debt to Assets"      value={rat.debt_to_assets != null ? pct(rat.debt_to_assets * 100) : 'N/A'} delta="Total Liabilities / Total Assets" sentiment={rat.debt_to_assets != null && rat.debt_to_assets < 0.5 ? 'pos' : 'warn'} />
-          </div>
+  const panels = [
+    {
+      id: 'bs-ale', title: 'A = L + E — Balance Sheet Components',
+      badge: 'fn-balancesheet', src: 'F0902', span: 2,
+      render: () => (
+        <ResponsiveContainer width="100%" height={200}>
+          <BarChart data={aleData} margin={{ left: 10 }}>
+            <CartesianGrid {...GRID} /><XAxis dataKey="name" {...XAXIS} /><YAxis {...YAXIS} tickFormatter={v => fd(v)} />
+            <Tooltip {...TT} formatter={v => usd(v)} /><Legend wrapperStyle={{ fontSize: 10 }} />
+            <Bar dataKey="Current Assets" stackId="a" fill={C.blue} fillOpacity={0.65} radius={[0, 0, 0, 0]} />
+            <Bar dataKey="Non-Current Assets" stackId="a" fill={C.blue} fillOpacity={0.3} radius={[2, 2, 0, 0]} />
+            <Bar dataKey="Current Liabilities" stackId="a" fill={C.red} fillOpacity={0.65} />
+            <Bar dataKey="Non-Current Liabilities" stackId="a" fill={C.red} fillOpacity={0.3} />
+            <Bar dataKey="Equity" stackId="a" fill={C.purple} fillOpacity={0.55} radius={[2, 2, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      ),
+    },
+    {
+      id: 'bs-donut', title: `Current Asset Composition — ${fyLabel} P${period}`,
+      badge: 'fn-balancesheet', span: 1,
+      render: () => donutData.length > 0 ? (
+        <ResponsiveContainer width="100%" height={180}>
+          <PieChart>
+            <Pie data={donutData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={2} label={({ name, value }) => `${name}: ${usd(value)}`} labelLine={{ stroke: C.txtt, strokeWidth: 0.5 }} style={{ fontSize: 8 }}>
+              {donutData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+            </Pie>
+            <Tooltip {...TT} formatter={v => usd(v)} />
+          </PieChart>
+        </ResponsiveContainer>
+      ) : <div style={{ fontSize: 11, color: C.txtt, padding: 20 }}>No current asset accounts</div>,
+    },
+    ...(trendData.length > 0 ? [{
+      id: 'bs-trend', title: `Period Trend — ${prevLabel} vs ${fyLabel}`,
+      badge: 'fn-balancesheet', span: 2,
+      render: () => (
+        <ResponsiveContainer width="100%" height={160}>
+          <BarChart data={trendData}>
+            <CartesianGrid {...GRID} /><XAxis dataKey="name" {...XAXIS} /><YAxis {...YAXIS} tickFormatter={v => fd(v)} />
+            <Tooltip {...TT} formatter={v => usd(v)} /><Legend wrapperStyle={{ fontSize: 10 }} />
+            <Bar dataKey="Assets" fill={C.blue} fillOpacity={0.55} radius={[2, 2, 0, 0]} />
+            <Bar dataKey="Liabilities" fill={C.red} fillOpacity={0.55} radius={[2, 2, 0, 0]} />
+            <Bar dataKey="Equity" fill={C.purple} fillOpacity={0.55} radius={[2, 2, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      ),
+    }] : []),
+    {
+      id: 'bs-ca', title: 'Current Assets', span: 1,
+      render: () => <AccountTable title="Current Assets" accounts={b?.assets?.current_assets?.accounts} color={C.blue} />,
+    },
+    {
+      id: 'bs-cl', title: 'Current Liabilities', span: 1,
+      render: () => <AccountTable title="Current Liabilities" accounts={b?.liabilities?.current_liabilities?.accounts} color={C.red} />,
+    },
+    {
+      id: 'bs-nca', title: 'Non-Current Assets', span: 1,
+      render: () => <AccountTable title="Non-Current Assets" accounts={b?.assets?.non_current_assets?.accounts} color={C.blue} />,
+    },
+    {
+      id: 'bs-ncl', title: 'Non-Current Liabilities', span: 1,
+      render: () => <AccountTable title="Non-Current Liabilities" accounts={b?.liabilities?.non_current_liabilities?.accounts} color={C.red} />,
+    },
+    ...(b?.equity?.accounts?.length > 0 ? [{
+      id: 'bs-eq', title: 'Equity Accounts', span: 2,
+      render: () => <AccountTable title="Equity" accounts={b.equity.accounts} color={C.purple} />,
+    }] : []),
+  ]
 
-          <div className="chart-grid chart-grid--3" style={{ marginTop: 9 }}>
-            <MetricCard label="Debt / Equity"       value={ratio(rat.debt_to_equity)}  delta={rat.debt_to_equity == null ? 'No equity — cannot compute' : 'Total Liabilities / Total Equity'} sentiment={rat.debt_to_equity != null && rat.debt_to_equity < 1.0 ? 'pos' : 'warn'} />
-            <MetricCard label="Equity Multiplier"   value={ratio(rat.equity_multiplier)} delta={rat.equity_multiplier == null ? 'No equity — cannot compute' : 'Total Assets / Total Equity'} sentiment="neu" />
-            <MetricCard label="Balance Sheet Check"
-              value={balanced === true ? 'BALANCED ✓' : balanced === false ? `IMBALANCE: ${usd(meta.imbalance_amount)}` : 'Unknown'}
-              delta="A − (L + E) must = 0"
-              sentiment={balanced === true ? 'pos' : 'neg'}
-            />
-          </div>
-
-          {/* Row 3: Trend — current vs prior year */}
-          {trendData && (
-            <div style={{ marginTop: 11 }}>
-              <ChartCard
-                title={`Period Trend — ${prevLabel} vs ${fyLabel}`}
-                subtitle={`Total Assets / Liabilities / Equity at P${period} · Source: F0902`}
-                fn="fn-balancesheet-analysis"
-                height={180}
-                legend={[
-                  { color: '#3266ad', label: 'Assets' },
-                  { color: '#e24b4a', label: 'Liabilities' },
-                  { color: '#7f77dd', label: 'Equity' },
-                ]}
-              >
-                <Bar data={trendData} options={{ ...BASE, scales: SCALES_TREND, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${usd(ctx.raw)}` } } } }} />
-              </ChartCard>
-            </div>
-          )}
-
-          {/* Row 4: Account detail tables */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 11, marginTop: 11 }}>
-            <AccountTable title="Current Assets" accounts={b.assets?.current_assets?.accounts} color="#3266ad" />
-            <AccountTable title="Current Liabilities" accounts={b.liabilities?.current_liabilities?.accounts} color="#e24b4a" />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 11, marginTop: 9 }}>
-            <AccountTable title="Non-Current Assets" accounts={b.assets?.non_current_assets?.accounts} color="rgba(50,102,173,0.6)" />
-            <AccountTable title="Non-Current Liabilities" accounts={b.liabilities?.non_current_liabilities?.accounts} color="rgba(226,75,74,0.6)" />
-          </div>
-          {b.equity?.accounts?.length > 0 && (
-            <div style={{ marginTop: 9 }}>
-              <AccountTable title="Equity" accounts={b.equity.accounts} color="#7f77dd" />
-            </div>
-          )}
-        </>
-      )}
-    </>
-  )
+  return <div>
+    <div className="tab-header"><span className="tab-header__title">Balance Sheet</span><button className="tab-header__btn" onClick={refetch} disabled={loading}>↻ Refresh</button></div>
+    <KPIRail chips={chips} /><PanelGrid panels={panels} /></div>
 }

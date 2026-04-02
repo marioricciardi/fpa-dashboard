@@ -1,30 +1,29 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import {
-  Chart as ChartJS, CategoryScale, LinearScale, BarElement,
-  PointElement, LineElement, ArcElement, Tooltip, Legend, Filler
-} from 'chart.js'
-import { Bar, Line } from 'react-chartjs-2'
+  BarChart, Bar, LineChart, Line,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer,
+} from 'recharts'
 import { Send } from 'lucide-react'
 import { chatQuery } from '../api/broker.js'
-import { fmt } from '../utils/chartAdapter.js'
+import { useSimulation } from '../context/SimulationContext.jsx'
+import { C, GRID, XAXIS, YAXIS, TT, fd } from '../utils/chartConstants.js'
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineElement, ArcElement, Tooltip, Legend, Filler)
+const PALETTE = [C.blue, C.teal, C.purple, C.amber, C.red, C.lime, C.gray]
 
-const TC = '#888780', GC = 'rgba(0,0,0,0.06)'
-const PALETTE = ['#3266ad','#1d9e75','#7f77dd','#ef9f27','#e24b4a','#639922','#888780']
-
-function buildChartData(chartData, chartType) {
-  if (!chartData) return null
+function buildRechartsData(chartData) {
+  if (!chartData) return []
   const { labels, series } = chartData
   const keys = Object.keys(series)
-  const datasets = keys.map((key, i) => ({
-    label: key,
-    data: series[key],
-    ...(chartType === 'line'
-      ? { borderColor: PALETTE[i % PALETTE.length], borderWidth: 2, pointRadius: 3, pointBackgroundColor: PALETTE[i % PALETTE.length], fill: false, tension: 0.3 }
-      : { backgroundColor: PALETTE[i % PALETTE.length] + '38', borderColor: PALETTE[i % PALETTE.length], borderWidth: 1.5, borderRadius: 3 }),
-  }))
-  return { labels, datasets }
+  return labels.map((label, i) => {
+    const row = { name: label }
+    keys.forEach(k => { row[k] = series[k][i] ?? 0 })
+    return row
+  })
+}
+function seriesKeys(chartData) {
+  if (!chartData) return []
+  return Object.keys(chartData.series)
 }
 
 function TraceTimeline({ trace }) {
@@ -195,26 +194,50 @@ export default function AgentChatTab() {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [streamText, setStreamText] = useState('')
+  const [traceOpen, setTraceOpen] = useState(true)
+  const [traceWidth, setTraceWidth] = useState(380)
   const scrollRef = useRef(null)
   const inputRef = useRef(null)
+  const resizing = useRef(false)
+
+  const onResizeStart = useCallback((e) => {
+    e.preventDefault()
+    resizing.current = true
+    const startX = e.clientX
+    const startW = traceWidth
+    const onMove = (ev) => {
+      if (!resizing.current) return
+      const delta = startX - ev.clientX
+      setTraceWidth(Math.max(200, Math.min(700, startW + delta)))
+    }
+    const onUp = () => { resizing.current = false; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [traceWidth])
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [messages, loading])
+  }, [messages, loading, streamText])
 
   async function handleSend() {
     const text = input.trim()
     if (!text || loading) return
     setInput('')
+    setStreamText('')
     setMessages(prev => [...prev, { role: 'user', content: text }])
     setLoading(true)
     try {
       const history = messages.map(m => ({ role: m.role, content: m.role === 'user' ? m.content : m.data?.answer || '' }))
-      const result = await chatQuery(text, history)
+      const result = await chatQuery(text, history, {
+        onDelta: (partial) => setStreamText(partial),
+      })
+      setStreamText('')
       setMessages(prev => [...prev, { role: 'assistant', data: result }])
     } catch (e) {
+      setStreamText('')
       setMessages(prev => [...prev, { role: 'assistant', data: { answer: `Error: ${e.message}`, sources: [], trace: null } }])
     } finally {
       setLoading(false)
@@ -229,25 +252,17 @@ export default function AgentChatTab() {
     }
   }
 
-  const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant')
-
-  const CHART_OPTS = {
-    responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: true, position: 'bottom', labels: { color: TC, font: { size: 9 }, boxWidth: 9, padding: 8 } } },
-    scales: {
-      x: { ticks: { color: TC, font: { size: 9 } }, grid: { color: GC } },
-      y: { ticks: { color: TC, font: { size: 9 }, callback: v => typeof v === 'number' && v > 10000 ? fmt(v, 'usd_m') : `$${v}` }, grid: { color: GC } },
-    },
-  }
+  const { simulations } = useSimulation()
+  const simActive = simulations.length > 0
 
   return (
-    <div className="chat-layout">
+    <div style={{ display: 'grid', gridTemplateColumns: traceOpen ? `1fr auto ${traceWidth}px` : '1fr auto', gap: 0, height: 'calc(100vh - 120px)', minHeight: 0 }}>
       {/* LEFT: conversation */}
       <div className="chat-left">
         <div className="chat-messages" ref={scrollRef}>
           {messages.length === 0 && (
             <div className="chat-empty">
-              <div className="chat-empty__title">SmartRouter</div>
+              <div className="chat-empty__title">SmartRouter{simActive ? ' (Simulation Active)' : ''}</div>
               <div className="chat-empty__sub">Ask a financial question — the agent will route to the appropriate OCI Functions and return analysis from Oracle ADW.</div>
               <div className="chat-empty__examples">
                 <button onClick={() => setInput('Show me the balance sheet for CORP')}>Balance sheet for CORP</button>
@@ -270,27 +285,49 @@ export default function AgentChatTab() {
                       ))}
                     </div>
                   )}
-                  {/* Inline chart for this message */}
-                  {msg.data?.chart_data && (
-                    <div className="chat-msg__chart-inline">
-                      <div className="chat-msg__chart-title">{msg.data.chart_title}</div>
-                      <div style={{ height: 180 }}>
-                        {msg.data.chart_type === 'line'
-                          ? <Line data={buildChartData(msg.data.chart_data, 'line')} options={CHART_OPTS} />
-                          : <Bar data={buildChartData(msg.data.chart_data, 'bar')} options={CHART_OPTS} />}
+                  {/* Inline charts — support multiple from broker artifacts */}
+                  {(msg.data?.charts?.length > 0 ? msg.data.charts : (msg.data?.chart_data ? [{ chart_data: msg.data.chart_data, chart_type: msg.data.chart_type, chart_title: msg.data.chart_title }] : [])).map((chart, ci) => {
+                    const rcData = buildRechartsData(chart.chart_data)
+                    const keys = seriesKeys(chart.chart_data)
+                    const isLine = chart.chart_type === 'line'
+                    return (
+                      <div key={ci} className="chat-msg__chart-inline">
+                        <div className="chat-msg__chart-title">{chart.chart_title}</div>
+                        <ResponsiveContainer width="100%" height={180}>
+                          {isLine ? (
+                            <LineChart data={rcData}>
+                              <CartesianGrid {...GRID} /><XAxis dataKey="name" {...XAXIS} /><YAxis {...YAXIS} tickFormatter={v => fd(v)} />
+                              <Tooltip {...TT} formatter={v => fd(v)} /><Legend wrapperStyle={{ fontSize: 9 }} />
+                              {keys.map((k, i) => <Line key={k} dataKey={k} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot={{ r: 2 }} />)}
+                            </LineChart>
+                          ) : (
+                            <BarChart data={rcData}>
+                              <CartesianGrid {...GRID} /><XAxis dataKey="name" {...XAXIS} /><YAxis {...YAXIS} tickFormatter={v => fd(v)} />
+                              <Tooltip {...TT} formatter={v => fd(v)} /><Legend wrapperStyle={{ fontSize: 9 }} />
+                              {keys.map((k, i) => <Bar key={k} dataKey={k} fill={PALETTE[i % PALETTE.length]} fillOpacity={0.6} radius={[2, 2, 0, 0]} />)}
+                            </BarChart>
+                          )}
+                        </ResponsiveContainer>
                       </div>
-                    </div>
-                  )}
+                    )
+                  })}
                 </div>
               )}
             </div>
           ))}
           {loading && (
             <div className="chat-msg chat-msg--assistant">
-              <div className="chat-msg__loading">
-                <span className="chat-dot-pulse" />
-                Routing query to agents…
-              </div>
+              {streamText ? (
+                <div className="chat-msg__assistant">
+                  <AnswerMarkdown text={streamText} />
+                  <div style={{ fontSize: 9, color: C.txtt, marginTop: 4, fontStyle: 'italic' }}>Generating…</div>
+                </div>
+              ) : (
+                <div className="chat-msg__loading">
+                  <span className="chat-dot-pulse" />
+                  Routing query to agents…
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -312,16 +349,39 @@ export default function AgentChatTab() {
         </div>
       </div>
 
-      {/* RIGHT: execution trace + chart */}
-      <div className="chat-right">
-        {lastAssistant?.data?.trace ? (
-          <TraceTimeline trace={lastAssistant.data.trace} />
-        ) : (
-          <div className="chat-right-empty">
-            <div className="chat-right-empty__text">Execution trace will appear here after a query</div>
-          </div>
-        )}
+      {/* RESIZE HANDLE + TOGGLE */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: 12, cursor: traceOpen ? 'col-resize' : 'default', userSelect: 'none', position: 'relative' }}
+        onMouseDown={traceOpen ? onResizeStart : undefined}>
+        <button
+          onClick={() => setTraceOpen(prev => !prev)}
+          title={traceOpen ? 'Close trace panel' : 'Open trace panel'}
+          style={{
+            position: 'absolute', top: 8, width: 20, height: 20, borderRadius: '50%',
+            border: '1px solid var(--color-border-tertiary)', background: 'var(--color-bg-primary)',
+            color: 'var(--color-text-tertiary)', fontSize: 11, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2,
+            padding: 0, lineHeight: 1,
+          }}>
+          {traceOpen ? '›' : '‹'}
+        </button>
+        {traceOpen && <div style={{ width: 3, height: 32, borderRadius: 2, background: 'var(--color-border-tertiary)' }} />}
       </div>
+
+      {/* RIGHT: execution trace */}
+      {traceOpen && (
+        <div className="chat-right">
+          {(() => {
+            const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant')
+            return lastAssistant?.data?.trace ? (
+              <TraceTimeline trace={lastAssistant.data.trace} />
+            ) : (
+              <div className="chat-right-empty">
+                <div className="chat-right-empty__text">Execution trace will appear here after a query</div>
+              </div>
+            )
+          })()}
+        </div>
+      )}
     </div>
   )
 }
