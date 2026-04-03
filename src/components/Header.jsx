@@ -39,19 +39,22 @@ export default function Header({ fiscalYear, period, onFiscalYearChange, onPerio
   const pUp    = () => { if (period < 12) onPeriodChange(period + 1) }
   return (
     <header style={{
-      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      display: 'flex', justifyContent: 'space-between', alignItems: 'left',
       padding: '11px 20px',
       borderBottom: 'none',
       background: 'var(--color-header-bg, #2D1B69)',
     }}>
-      <div>
-        <h1 style={{ fontSize: 15, fontWeight: 500, letterSpacing: '-0.2px', color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 0 }}>
+        <img src="/ERP_Logo_CMYK.svg" alt="ERP Suites" style={{ height: 50, margin: '-8px -12px -8px -10px' }} />
+        <div>
+        <h1 style={{ fontSize: 15, fontWeight: 500, letterSpacing: '-0.2px', color: '#fff', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
           FP&amp;A Intelligence Platform
           {isAnyActive && <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'rgba(245,158,11,.15)', color: '#F59E0B', border: '0.5px solid rgba(245,158,11,.3)', animation: 'pulse 2s infinite' }}>⚡ {activeSimulations?.length} sim{activeSimulations?.length > 1 ? 's' : ''} active</span>}
         </h1>
         <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
           Oracle ADW · ADWPRD3 · JDE EnterpriseOne · LAB schema · us-chicago-1
         </p>
+        </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         {useMock && (
