@@ -23,13 +23,22 @@ export function AlertRow({ level, text, src }) {
   )
 }
 
-export function GaugeArc({ pct = 0, color = C.teal, size = 70 }) {
-  const arc = Math.PI * 28, filled = Math.min(Math.max(pct, 0), 1) * arc
+export function GaugeArc({ pct, value, max = 100, label, unit = '', color = C.teal, size = 120, meaning, target }) {
+  const frac = pct != null ? pct : (max > 0 ? Math.min(Math.max((value ?? 0) / max, 0), 1) : 0)
+  const arc = Math.PI * 28, filled = frac * arc
+  const display = value != null ? `${Math.round(value)}${unit}` : `${Math.round(frac * 100)}%`
+  const h = Math.round(size * 0.75)
   return (
-    <svg width={size} height={Math.round(size * 0.66)} viewBox="0 0 70 46">
-      <path d="M7 40 A28 28 0 0 1 63 40" fill="none" stroke="rgba(0,0,0,0.08)" strokeWidth={6} strokeLinecap="round" />
-      <path d="M7 40 A28 28 0 0 1 63 40" fill="none" stroke={color} strokeWidth={6} strokeLinecap="round" strokeDasharray={`${filled} ${arc}`} />
-    </svg>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: size }}>
+      <svg width={size} height={h} viewBox="0 0 70 50">
+        <path d="M7 40 A28 28 0 0 1 63 40" fill="none" stroke="rgba(0,0,0,0.08)" strokeWidth={6} strokeLinecap="round" />
+        <path d="M7 40 A28 28 0 0 1 63 40" fill="none" stroke={color} strokeWidth={6} strokeLinecap="round" strokeDasharray={`${filled} ${arc}`} />
+        <text x="35" y="38" textAnchor="middle" fill={color} fontSize="10" fontWeight="600">{display}</text>
+      </svg>
+      {label && <span style={{ fontSize: 12, fontWeight: 700, color: C.txt, marginTop: -4 }}>{label}</span>}
+      {meaning && <span style={{ fontSize: 9, color: C.txtt, marginTop: 2, textAlign: 'center', lineHeight: 1.2 }}>{meaning}</span>}
+      {target && <span style={{ fontSize: 9, fontWeight: 600, color, marginTop: 1 }}>Target: {target}</span>}
+    </div>
   )
 }
 
@@ -51,7 +60,7 @@ export function WaterfallBar({ items }) {
         <Tooltip {...TT} formatter={(v, n, p) => n === 'offset' ? null : [fd(p.payload.displayVal), '']} />
         <Bar dataKey="offset" stackId="wf" fill="transparent" legendType="none" isAnimationActive={false} />
         <Bar dataKey="barVal" stackId="wf" radius={[2, 2, 0, 0]} isAnimationActive={false}>
-          {data.map((d, i) => <Cell key={i} fill={d.isTotal ? C.blue : d.isNeg ? C.red : C.teal} fillOpacity={d.isTotal ? 0.85 : 0.75} />)}
+          {data.map((d, i) => <Cell key={i} fill={d.isTotal ? C.chart1 : d.isNeg ? C.chart3 : C.chart2} fillOpacity={d.isTotal ? 0.85 : 0.75} />)}
         </Bar>
       </BarChart>
     </ResponsiveContainer>

@@ -20,7 +20,7 @@ const TABS = [
   { id: 'variance',       label: 'Variance' },
   { id: 'forecast',       label: 'Forecast' },
   { id: 'balancesheet',   label: 'Balance Sheet' },
-  { id: 'workingcapital', label: 'Working Capital', isNew: true },
+  { id: 'workingcapital', label: 'Working Capital' },
   { id: 'statistics',     label: 'Statistics' },
   { id: 'simulations',    label: 'Simulations', isSim: true },
   { id: 'agentchat',      label: 'Agent Chat' },

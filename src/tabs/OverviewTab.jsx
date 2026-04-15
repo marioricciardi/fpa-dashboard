@@ -122,8 +122,8 @@ export default function OverviewTab({ fiscalYear = 25, period = 6 }) {
                 si === 0 && <Area key={`al${si}`} dataKey={`s${si}_p10`} fill="white" stroke="none" fillOpacity={1} legendType="none" isAnimationActive={false} />,
                 <Line key={`lp${si}`} dataKey={`s${si}_p50`} stroke={s.color} strokeWidth={1.8} strokeDasharray="6 3" dot={false} name={`${s.label} P50`} isAnimationActive={false} />,
               ])}
-              <Line dataKey="rev" name="Revenue" stroke={C.blue} strokeWidth={1.5} dot={{ r: 2 }} />
-              <Line dataKey="ebitda" name="EBITDA" stroke={C.coral} strokeWidth={1.5} dot={{ r: 2 }} />
+              <Line dataKey="rev" name="Revenue" stroke={C.chart1} strokeWidth={1.5} dot={{ r: 2 }} />
+              <Line dataKey="ebitda" name="EBITDA" stroke={C.chart4} strokeWidth={1.5} dot={{ r: 2 }} />
               <Line dataKey="bud" name="Budget" stroke={C.gray} strokeWidth={1} strokeDasharray="3 2" dot={false} />
             </ComposedChart>
           </ResponsiveContainer>

@@ -1,8 +1,19 @@
 // Shared design tokens and chart config for recharts-based panels
 
 export const C = {
-  blue: '#7C3AED', teal: '#16a34a', purple: '#7C3AED',
-  amber: '#EF9F27', red: '#E24B4A', coral: '#D85A30', gray: '#8887a0',
+  // UI chrome (badges, buttons, header accents) — stays purple
+  blue: '#7C3AED',
+  // Chart-specific: strong, distinct, high-contrast palette
+  chart1: '#2563EB',   // vivid blue — primary chart series
+  chart2: '#059669',   // emerald green — secondary / positive
+  chart3: '#E11D48',   // rose red — negative / alerts
+  chart4: '#F97316',   // bright orange — tertiary
+  chart5: '#8B5CF6',   // medium purple — quaternary
+  chart6: '#0891B2',   // cyan — fifth series
+  // Semantic colors
+  teal: '#059669', purple: '#8B5CF6',
+  amber: '#F59E0B', red: '#E11D48', coral: '#EA580C', gray: '#6B7280',
+  lime: '#65A30D',
   bg: 'var(--color-bg-primary, #fff)',
   surf: 'var(--color-bg-secondary, #f8f8fa)',
   brd: 'var(--color-border-tertiary, rgba(0,0,0,0.10))',

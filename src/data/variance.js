@@ -1,95 +1,84 @@
-// variance.js — mock ToolResult for variance_get_budget_vs_actual and
-//               variance_get_period_comparison
-// OCI Functions: fn-variance-budget-vs-actual, fn-variance-period-comparison
-// ADW source: F0902 (ledger type BA = budget, AA = actual)
+// variance.js — param-aware mocks for variance tools
+// Seed data lives in ./seeds/varianceSeeds.js — this file is logic only.
+import { YEARLY_BUDGET, YEARLY_PNL } from './seeds/varianceSeeds.js'
 
-export const budgetVsActual = {
-  result: {
-    summary: {
-      total_budget:        19600000,
-      total_actual:        20100000,
-      total_variance:        500000,
-      total_variance_pct:      2.6,
-      favorable_count:           4,
-      unfavorable_count:         6,
-    },
-    top_drivers: [
-      { account: 'Salaries & Benefits',  account_obj: '5110', business_unit: 'ENG',   budget: 2100000, actual: 2290000, variance:  190000, variance_pct:  9.0, favorable: false },
-      { account: 'Marketing Programs',   account_obj: '6210', business_unit: 'MKTG',  budget:  900000, actual: 1098000, variance:  198000, variance_pct: 22.2, favorable: false },
-      { account: 'Cloud Infrastructure', account_obj: '7420', business_unit: 'IT',    budget: 1400000, actual: 1545000, variance:  145000, variance_pct: 10.4, favorable: false },
-      { account: 'Software Licenses',    account_obj: '7410', business_unit: 'IT',    budget:  580000, actual:  625000, variance:   45000, variance_pct:  7.8, favorable: false },
-      { account: 'R&D Personnel',        account_obj: '5210', business_unit: 'RD',    budget: 2200000, actual: 2111000, variance:  -89000, variance_pct: -4.0, favorable: true  },
-      { account: 'Sales Commissions',    account_obj: '6110', business_unit: 'SALES', budget: 1800000, actual: 1600000, variance: -200000, variance_pct:-11.1, favorable: true  },
-      { account: 'Operations',           account_obj: '5310', business_unit: 'OPS',   budget: 1400000, actual: 1302000, variance:  -98000, variance_pct: -7.0, favorable: true  },
-      { account: 'Finance Overhead',     account_obj: '8110', business_unit: 'FIN',   budget:  600000, actual:  618000, variance:   18000, variance_pct:  3.0, favorable: false },
-    ],
-  },
-  computation_method: 'sql_aggregation',
-  r_squared: null,
-  _low_confidence: false,
-  confidence_low: null,
-  confidence_high: null,
-  confidence_pct: null,
-  model_version: 'sql-v1.0',
-  trained_as_of: null,
-  coefficients_used: {},
-  valid_for_units: ['ALL'],
-  extrapolation_limit: null,
-  assumptions: [
-    'Budget ledger type: BA, Actual ledger type: AA',
-    'Fiscal year 25, periods 1–6',
-    'top_n_drivers: 8, variance_type: all',
-    'Positive variance = unfavorable (over budget)',
-  ],
-  chart_data: {
-    labels: ['Salaries','Marketing','Cloud Infra','SW Licenses','R&D','Sales','Operations','Finance'],
-    series: {
-      budget: [2100000,  900000, 1400000, 580000, 2200000, 1800000, 1400000, 600000],
-      actual: [2290000, 1098000, 1545000, 625000, 2111000, 1600000, 1302000, 618000],
-      variance: [190000, 198000, 145000, 45000, -89000, -200000, -98000, 18000],
-    },
-  },
-  chart_title: 'Budget vs Actual Variance — FY2025 P1–P6',
-  chart_type: 'bar',
-  interaction_group: 'variance-fy25',
+function enrichDrivers(drivers, periodScale) {
+  return drivers.map(d => {
+    const budget = Math.round(d.budget * periodScale)
+    const actual = Math.round(d.actual * periodScale)
+    const variance = actual - budget
+    return {
+      ...d, budget, actual, variance,
+      abs_variance: Math.abs(variance),
+      variance_pct: budget !== 0 ? +((variance / budget) * 100).toFixed(1) : 0,
+      direction: variance > 0 ? 'unfavorable' : variance < 0 ? 'favorable' : 'on-target',
+    }
+  })
 }
 
-export const periodComparison = {
-  result: {
-    comparison_type: 'YoY',
-    current: { fiscal_year: 25, period: 6, revenue: 36200000, opex: 19100000, net_income: 14210000, gross_margin_pct: 60.8 },
-    prior:   { fiscal_year: 24, period: 6, revenue: 32800000, opex: 18100000, net_income: 11305000, gross_margin_pct: 59.2 },
-    deltas: {
-      revenue:          { amount: 3400000, pct: 10.4, favorable: true  },
-      opex:             { amount: 1000000, pct:  5.5, favorable: false },
-      net_income:       { amount: 2905000, pct: 25.7, favorable: true  },
-      gross_margin_pct: { amount:     1.6, pct:  2.7, favorable: true  },
+export function budgetVsActual(params = {}) {
+  const fy    = params.fiscal_year ?? 25
+  const pFrom = params.period_from ?? 1
+  const pTo   = params.period_to ?? 6
+  const topN  = params.top_n_drivers ?? 8
+
+  const raw = YEARLY_BUDGET[fy] || YEARLY_BUDGET[25]
+  const periodScale = (pTo - pFrom + 1) / 12
+
+  const drivers = enrichDrivers(raw, periodScale).slice(0, topN)
+  const totalBudget = drivers.reduce((s, d) => s + d.budget, 0)
+  const totalActual = drivers.reduce((s, d) => s + d.actual, 0)
+  const totalVariance = totalActual - totalBudget
+
+  return {
+    result: {
+      summary: {
+        total_budget: totalBudget,
+        total_actual: totalActual,
+        total_variance: totalVariance,
+        variance_pct: totalBudget !== 0 ? +((totalVariance / totalBudget) * 100).toFixed(1) : 0,
+      },
+      drivers,
+      metadata: { fiscal_year: fy, period_from: pFrom, period_to: pTo },
     },
-  },
-  computation_method: 'sql_aggregation',
-  r_squared: null,
-  _low_confidence: false,
-  confidence_low: null,
-  confidence_high: null,
-  confidence_pct: null,
-  model_version: 'sql-v1.0',
-  trained_as_of: null,
-  coefficients_used: {},
-  valid_for_units: ['ALL'],
-  extrapolation_limit: null,
-  assumptions: [
-    'comparison_type: YoY',
-    'Fiscal year 25, period 6 vs fiscal year 24, period 6',
-    'F0902 ledger type AA',
-  ],
-  chart_data: {
-    labels: ['Revenue', 'OpEx', 'Net Income'],
-    series: {
-      'FY2025': [36200000, 19100000, 14210000],
-      'FY2024': [32800000, 18100000, 11305000],
+    computation_method: 'sql_aggregation',
+    r_squared: null,
+    _low_confidence: false,
+    model_version: 'mock-v2.0',
+  }
+}
+
+export function periodComparison(params = {}) {
+  const fy   = params.fiscal_year ?? 25
+  const per  = params.period ?? 6
+  const comp = fy - 1
+
+  const cur = YEARLY_PNL[fy]   || YEARLY_PNL[25]
+  const pri = YEARLY_PNL[comp] || YEARLY_PNL[24]
+  const scale = per / 12
+
+  const cRev = Math.round(cur.revenue * scale)
+  const cOpex = Math.round(cur.opex * scale)
+  const cNI  = Math.round(cur.net_income * scale)
+  const pRev = Math.round(pri.revenue * scale)
+  const pOpex = Math.round(pri.opex * scale)
+  const pNI  = Math.round(pri.net_income * scale)
+
+  return {
+    result: {
+      comparison_type: 'YoY',
+      current: { fiscal_year: fy, period: per, revenue: cRev, opex: cOpex, net_income: cNI, gross_margin_pct: cur.gm_pct },
+      prior:   { fiscal_year: comp, period: per, revenue: pRev, opex: pOpex, net_income: pNI, gross_margin_pct: pri.gm_pct },
+      deltas: {
+        revenue:          { amount: cRev - pRev,  pct: +((cRev - pRev) / pRev * 100).toFixed(1) },
+        opex:             { amount: cOpex - pOpex, pct: +((cOpex - pOpex) / pOpex * 100).toFixed(1) },
+        net_income:       { amount: cNI - pNI,    pct: +((cNI - pNI) / pNI * 100).toFixed(1) },
+        gross_margin_pct: { amount: +(cur.gm_pct - pri.gm_pct).toFixed(1), pct: +((cur.gm_pct - pri.gm_pct) / pri.gm_pct * 100).toFixed(1) },
+      },
     },
-  },
-  chart_title: 'YoY Period Comparison — P6 FY2025 vs FY2024',
-  chart_type: 'bar',
-  interaction_group: 'variance-fy25',
+    computation_method: 'sql_aggregation',
+    r_squared: null,
+    _low_confidence: false,
+    model_version: 'mock-v2.0',
+  }
 }

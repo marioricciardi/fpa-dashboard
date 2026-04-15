@@ -24,7 +24,7 @@ function groupAccounts(accounts) {
   return Object.entries(map).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
 }
 
-const COLORS = [C.blue, C.teal, C.purple, C.amber, C.red, C.lime, C.gray, '#b08d57']
+const COLORS = [C.chart1, C.chart2, C.chart5, C.chart4, C.chart3, C.lime, C.gray, '#b08d57']
 
 function AccountTable({ title, accounts, color }) {
   if (!accounts || accounts.length === 0) return null
@@ -114,11 +114,11 @@ export default function BalanceSheetTab({ fiscalYear = 25, period = 6 }) {
           <BarChart data={aleData} margin={{ left: 10 }}>
             <CartesianGrid {...GRID} /><XAxis dataKey="name" {...XAXIS} /><YAxis {...YAXIS} tickFormatter={v => fd(v)} />
             <Tooltip {...TT} formatter={v => usd(v)} /><Legend wrapperStyle={{ fontSize: 10 }} />
-            <Bar dataKey="Current Assets" stackId="a" fill={C.blue} fillOpacity={0.65} radius={[0, 0, 0, 0]} />
-            <Bar dataKey="Non-Current Assets" stackId="a" fill={C.blue} fillOpacity={0.3} radius={[2, 2, 0, 0]} />
-            <Bar dataKey="Current Liabilities" stackId="a" fill={C.red} fillOpacity={0.65} />
-            <Bar dataKey="Non-Current Liabilities" stackId="a" fill={C.red} fillOpacity={0.3} />
-            <Bar dataKey="Equity" stackId="a" fill={C.purple} fillOpacity={0.55} radius={[2, 2, 0, 0]} />
+            <Bar dataKey="Current Assets" stackId="a" fill={C.chart1} fillOpacity={0.65} radius={[0, 0, 0, 0]} />
+            <Bar dataKey="Non-Current Assets" stackId="a" fill={C.chart6} fillOpacity={0.3} radius={[2, 2, 0, 0]} />
+            <Bar dataKey="Current Liabilities" stackId="a" fill={C.chart3} fillOpacity={0.65} />
+            <Bar dataKey="Non-Current Liabilities" stackId="a" fill={C.chart4} fillOpacity={0.3} />
+            <Bar dataKey="Equity" stackId="a" fill={C.chart2} fillOpacity={0.55} radius={[2, 2, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       ),
@@ -145,9 +145,9 @@ export default function BalanceSheetTab({ fiscalYear = 25, period = 6 }) {
           <BarChart data={trendData}>
             <CartesianGrid {...GRID} /><XAxis dataKey="name" {...XAXIS} /><YAxis {...YAXIS} tickFormatter={v => fd(v)} />
             <Tooltip {...TT} formatter={v => usd(v)} /><Legend wrapperStyle={{ fontSize: 10 }} />
-            <Bar dataKey="Assets" fill={C.blue} fillOpacity={0.55} radius={[2, 2, 0, 0]} />
-            <Bar dataKey="Liabilities" fill={C.red} fillOpacity={0.55} radius={[2, 2, 0, 0]} />
-            <Bar dataKey="Equity" fill={C.purple} fillOpacity={0.55} radius={[2, 2, 0, 0]} />
+            <Bar dataKey="Assets" fill={C.chart1} fillOpacity={0.55} radius={[2, 2, 0, 0]} />
+            <Bar dataKey="Liabilities" fill={C.chart3} fillOpacity={0.55} radius={[2, 2, 0, 0]} />
+            <Bar dataKey="Equity" fill={C.chart2} fillOpacity={0.55} radius={[2, 2, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       ),

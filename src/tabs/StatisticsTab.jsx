@@ -36,12 +36,14 @@ function skewness(arr) {
   if (s === 0 || n < 3) return 0
   return (n / ((n - 1) * (n - 2))) * arr.reduce((acc, v) => acc + ((v - m) / s) ** 3, 0)
 }
-function histogram(arr, bins = 12) {
+function histogram(arr, bins) {
   if (!arr.length) return []
+  // Sturges' rule capped to requested max — avoids sparse gaps with small N
+  const k = bins ?? Math.max(3, Math.min(12, Math.ceil(1 + Math.log2(arr.length))))
   const min = Math.min(...arr), max = Math.max(...arr)
-  const width = (max - min) / bins || 1
-  const counts = new Array(bins).fill(0)
-  arr.forEach(v => { counts[Math.min(Math.floor((v - min) / width), bins - 1)]++ })
+  const width = (max - min) / k || 1
+  const counts = new Array(k).fill(0)
+  arr.forEach(v => { counts[Math.min(Math.floor((v - min) / width), k - 1)]++ })
   return counts.map((c, i) => ({ bin: usd(min + i * width), count: c }))
 }
 
@@ -58,7 +60,7 @@ export default function StatisticsTab({ fiscalYear = 25, period = 6 }) {
   const pnlOk = !!pnlData, varOk = !!varData
 
   // Extract period data
-  const periods = pnlData?.result?.periods || pnlData?.periods || []
+  const periods = pnlData?.result?.by_period || pnlData?.result?.periods || pnlData?.periods || []
   const revenues = periods.map(p => p.revenue ?? p.net_revenue ?? 0).filter(v => v !== 0)
   const cogs = periods.map(p => Math.abs(p.cogs ?? p.cost_of_goods_sold ?? 0)).filter(v => v !== 0)
   const gps = periods.map(p => p.gross_profit ?? 0).filter(v => v !== 0)
@@ -76,9 +78,9 @@ export default function StatisticsTab({ fiscalYear = 25, period = 6 }) {
   const cv = revMean !== 0 ? (revStd / revMean) * 100 : 0 // coefficient of variation
 
   // Histogram of revenue
-  const revHist = histogram(revenues, 10)
+  const revHist = histogram(revenues)
   // Histogram of variances
-  const varHist = histogram(variances, 10)
+  const varHist = histogram(variances)
 
   // Scatter: Revenue vs Gross Profit
   const scatterData = periods.map(p => ({
@@ -121,10 +123,10 @@ export default function StatisticsTab({ fiscalYear = 25, period = 6 }) {
       id: 'st-rev-hist', title: 'Revenue Distribution', badge: 'pnl_analysis', span: 1,
       render: () => revHist.length > 0 ? (
         <ResponsiveContainer width="100%" height={150}>
-          <BarChart data={revHist}>
-            <CartesianGrid {...GRID} /><XAxis dataKey="bin" {...XAXIS} /><YAxis {...YAXIS} />
+          <BarChart data={revHist} barCategoryGap={0} barGap={0}>
+            <CartesianGrid {...GRID} /><XAxis dataKey="bin" {...XAXIS} /><YAxis {...YAXIS} label={{ value: 'Count', angle: -90, position: 'insideLeft', style: { fontSize: 9, fill: 'rgba(255,255,255,0.45)' } }} allowDecimals={false} />
             <Tooltip {...TT} />
-            <Bar dataKey="count" fill={C.blue} fillOpacity={0.6} radius={[2, 2, 0, 0]} />
+            <Bar dataKey="count" fill={C.chart1} fillOpacity={0.6} radius={[2, 2, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       ) : <div style={{ fontSize: 11, color: C.txtt, padding: 20 }}>Insufficient data</div>,
@@ -133,11 +135,11 @@ export default function StatisticsTab({ fiscalYear = 25, period = 6 }) {
       id: 'st-var-hist', title: 'Variance Distribution', badge: 'variance', span: 1,
       render: () => varHist.length > 0 ? (
         <ResponsiveContainer width="100%" height={150}>
-          <BarChart data={varHist}>
-            <CartesianGrid {...GRID} /><XAxis dataKey="bin" {...XAXIS} /><YAxis {...YAXIS} />
+          <BarChart data={varHist} barCategoryGap={0} barGap={0}>
+            <CartesianGrid {...GRID} /><XAxis dataKey="bin" {...XAXIS} /><YAxis {...YAXIS} label={{ value: 'Count', angle: -90, position: 'insideLeft', style: { fontSize: 9, fill: 'rgba(255,255,255,0.45)' } }} allowDecimals={false} />
             <Tooltip {...TT} />
             <ReferenceLine x={0} stroke={C.gray} strokeDasharray="4 2" />
-            <Bar dataKey="count" fill={C.purple} fillOpacity={0.6} radius={[2, 2, 0, 0]} />
+            <Bar dataKey="count" fill={C.chart5} fillOpacity={0.6} radius={[2, 2, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       ) : <div style={{ fontSize: 11, color: C.txtt, padding: 20 }}>Insufficient data</div>,
@@ -152,7 +154,7 @@ export default function StatisticsTab({ fiscalYear = 25, period = 6 }) {
             <YAxis dataKey="y" type="number" name="Gross Profit" {...YAXIS} tickFormatter={v => fd(v)} />
             <ZAxis range={[30, 30]} />
             <Tooltip {...TT} formatter={v => usd(v)} />
-            <Scatter data={scatterData} fill={C.teal} fillOpacity={0.7} />
+            <Scatter data={scatterData} fill={C.chart2} fillOpacity={0.7} />
           </ScatterChart>
         </ResponsiveContainer>
       ) : <div style={{ fontSize: 11, color: C.txtt, padding: 20 }}>Insufficient data</div>,

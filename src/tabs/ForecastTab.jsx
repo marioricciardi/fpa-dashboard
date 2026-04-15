@@ -139,11 +139,11 @@ export default function ForecastTab({ fiscalYear = 25, period = 6 }) {
           <ComposedChart data={apChartData}>
             <CartesianGrid {...GRID} /><XAxis dataKey="p" {...XAXIS} /><YAxis {...YAXIS} tickFormatter={v => fd(v)} />
             <Tooltip {...TT} formatter={v => fd(v)} /><Legend wrapperStyle={{ fontSize: 10 }} />
-            <Area dataKey="upper" fill={C.red} stroke="none" fillOpacity={0.08} legendType="none" />
+            <Area dataKey="upper" fill={C.chart3} stroke="none" fillOpacity={0.08} legendType="none" />
             <Area dataKey="lower" fill="white" stroke="none" fillOpacity={1} legendType="none" />
-            <Bar dataKey="forecast" name="Forecast AP" fill={C.blue} fillOpacity={0.65} radius={[2, 2, 0, 0]} />
-            <Line dataKey="upper" name="Upper 95%" stroke={C.red} strokeWidth={1.5} strokeDasharray="4 2" dot={{ r: 3, fill: C.red }} />
-            <Line dataKey="lower" name="Lower 95%" stroke={C.teal} strokeWidth={1.5} strokeDasharray="4 2" dot={{ r: 3, fill: C.teal }} />
+            <Bar dataKey="forecast" name="Forecast AP" fill={C.chart1} fillOpacity={0.65} radius={[2, 2, 0, 0]} />
+            <Line dataKey="upper" name="Upper 95%" stroke={C.chart3} strokeWidth={1.5} strokeDasharray="4 2" dot={{ r: 3, fill: C.chart3 }} />
+            <Line dataKey="lower" name="Lower 95%" stroke={C.chart2} strokeWidth={1.5} strokeDasharray="4 2" dot={{ r: 3, fill: C.chart2 }} />
           </ComposedChart>
         </ResponsiveContainer>
       ) : <div style={{ fontSize: 11, color: C.txtt, padding: 20 }}>No AP data</div>,
@@ -161,8 +161,8 @@ export default function ForecastTab({ fiscalYear = 25, period = 6 }) {
                   <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : C.surf }}>
                     <td style={TDL}>P{String(pStart + i).padStart(2, '0')}</td>
                     <td style={{ ...TD, fontWeight: 500 }}>{usd(fc)}</td>
-                    <td style={{ ...TD, color: C.teal }}>{usd(lo)}</td>
-                    <td style={{ ...TD, color: C.red }}>{usd(hi)}</td>
+                    <td style={{ ...TD, color: C.chart2 }}>{usd(lo)}</td>
+                    <td style={{ ...TD, color: C.chart3 }}>{usd(hi)}</td>
                     <td style={TD}>{usd(hi - lo)}</td>
                   </tr>
                 )
@@ -170,8 +170,8 @@ export default function ForecastTab({ fiscalYear = 25, period = 6 }) {
               <tr style={{ borderTop: `1.5px solid ${C.brd}`, fontWeight: 600 }}>
                 <td style={TDL}>TOTAL</td>
                 <td style={TD}>{usd(forecasts.reduce((s, f) => s + (f.forecasted_ap_usd ?? 0), 0))}</td>
-                <td style={{ ...TD, color: C.teal }}>{usd(ciLow)}</td>
-                <td style={{ ...TD, color: C.red }}>{usd(ciHigh)}</td>
+                <td style={{ ...TD, color: C.chart2 }}>{usd(ciLow)}</td>
+                <td style={{ ...TD, color: C.chart3 }}>{usd(ciHigh)}</td>
                 <td style={TD}>{usd(ciHigh - ciLow)}</td>
               </tr>
             </tbody>
@@ -192,8 +192,8 @@ export default function ForecastTab({ fiscalYear = 25, period = 6 }) {
           <ComposedChart data={rollPerData}>
             <CartesianGrid {...GRID} /><XAxis dataKey="p" {...XAXIS} /><YAxis {...YAXIS} tickFormatter={v => fd(v)} />
             <Tooltip {...TT} formatter={v => fd(v)} /><Legend wrapperStyle={{ fontSize: 10 }} />
-            <Line dataKey="actual" name="Actual" stroke={C.teal} strokeWidth={2} dot={{ r: 2 }} />
-            <Line dataKey="forecast" name="Forecast" stroke={C.purple} strokeWidth={1.5} strokeDasharray="6 3" dot={{ r: 2 }} />
+            <Line dataKey="actual" name="Actual" stroke={C.chart2} strokeWidth={2} dot={{ r: 2 }} />
+            <Line dataKey="forecast" name="Forecast" stroke={C.chart5} strokeWidth={1.5} strokeDasharray="6 3" dot={{ r: 2 }} />
             <Line dataKey="budget" name="Budget" stroke={C.gray} strokeWidth={1} strokeDasharray="4 3" dot={false} />
           </ComposedChart>
         </ResponsiveContainer>

@@ -14,15 +14,17 @@ const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 const BROKER_URL = import.meta.env.VITE_BROKER_URL || 'http://localhost:8000'
 const BROKER_API_KEY = import.meta.env.VITE_BROKER_API_KEY || ''
 
-// Mock data registry — maps tool name to the async import of its mock file
+// Mock data registry — maps tool name to async function(params) returning ToolResult.
+// Each mock module exports a function that accepts { fiscal_year, period, ... }
+// and returns year-appropriate data (FY23–FY26). Seed constants live in data/seeds/.
 const MOCK_REGISTRY = {
-  pnl_get_analysis:                 () => import('../data/pnl.js').then(m => m.pnlAnalysis),
-  variance_get_budget_vs_actual:    () => import('../data/variance.js').then(m => m.budgetVsActual),
-  variance_get_period_comparison:   () => import('../data/variance.js').then(m => m.periodComparison),
-  forecast_get_quarter:             () => import('../data/forecast.js').then(m => m.forecastGetQuarter),
-  forecast_get_expense:             () => import('../data/forecast.js').then(m => m.forecastGetExpense),
-  forecast_get_rolling:             () => import('../data/forecast.js').then(m => m.forecastGetRolling),
-  balancesheet_get_analysis:        () => import('../data/balancesheet.js').then(m => m.balancesheetAnalysis),
+  pnl_get_analysis:              (p) => import('../data/pnl.js').then(m => m.pnlAnalysis(p)),
+  variance_get_budget_vs_actual: (p) => import('../data/variance.js').then(m => m.budgetVsActual(p)),
+  variance_get_period_comparison:(p) => import('../data/variance.js').then(m => m.periodComparison(p)),
+  forecast_get_quarter:          (p) => import('../data/forecast.js').then(m => m.forecastGetQuarter(p)),
+  forecast_get_expense:          (p) => import('../data/forecast.js').then(m => m.forecastGetExpense(p)),
+  forecast_get_rolling:          (p) => import('../data/forecast.js').then(m => m.forecastGetRolling(p)),
+  balancesheet_get_analysis:     (p) => import('../data/balancesheet.js').then(m => m.balancesheetAnalysis(p)),
 }
 
 /**
@@ -37,7 +39,7 @@ export async function callTool(toolName, params = {}) {
     const loader = MOCK_REGISTRY[toolName]
     if (!loader) throw new Error(`No mock registered for tool: ${toolName}`)
     await new Promise(r => setTimeout(r, 200)) // simulate latency
-    return loader()
+    return loader(params)
   }
 
   const res = await fetch(`${BROKER_URL}/tool/${encodeURIComponent(toolName)}`, {

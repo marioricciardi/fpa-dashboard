@@ -9,7 +9,7 @@ import { chatQuery } from '../api/broker.js'
 import { useSimulation } from '../context/SimulationContext.jsx'
 import { C, GRID, XAXIS, YAXIS, TT, fd } from '../utils/chartConstants.js'
 
-const PALETTE = [C.blue, C.teal, C.purple, C.amber, C.red, C.lime, C.gray]
+const PALETTE = [C.chart1, C.chart2, C.chart5, C.chart4, C.chart3, C.lime, C.gray]
 
 function buildRechartsData(chartData) {
   if (!chartData) return []

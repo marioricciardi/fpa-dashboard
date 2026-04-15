@@ -1,7 +1,7 @@
 // PanelGrid — Drag-to-reorder panel grid with minimize dock
 // Each panel has a PanelShell with header, drag handle, minimize button, and sim badge
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useSimulation } from '../context/SimulationContext.jsx'
 
 const C = {
@@ -55,6 +55,16 @@ export default function PanelGrid({ panels }) {
   const dragRef = useRef(null)
   const savedOrder = useRef(null)
   const debounce = useRef(null)
+
+  // Sync order when panels are dynamically added/removed
+  useEffect(() => {
+    const panelIds = panels.map(p => p.id)
+    setOrder(prev => {
+      const added = panelIds.filter(id => !prev.includes(id))
+      const kept = prev.filter(id => panelIds.includes(id))
+      return added.length || kept.length !== prev.length ? [...kept, ...added] : prev
+    })
+  }, [panels.length, panels.map(p => p.id).join(',')])
 
   const onDragStart = useCallback((e, id) => { dragRef.current = id; savedOrder.current = [...order]; setActiveId(id); e.dataTransfer.effectAllowed = 'move' }, [order])
   const onDragOver = useCallback((e, id) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (!dragRef.current || dragRef.current === id) return; setOverId(id); clearTimeout(debounce.current); debounce.current = setTimeout(() => { setOrder(prev => { const arr = [...prev], from = arr.indexOf(dragRef.current), to = arr.indexOf(id); if (from === -1 || to === -1 || from === to) return prev; arr.splice(from, 1); arr.splice(to, 0, dragRef.current); return arr }) }, 50) }, [])

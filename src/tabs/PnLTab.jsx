@@ -102,11 +102,11 @@ export default function PnLTab({ fiscalYear = 25, period = 6 }) {
                 si === 0 && <Area key={`al${si}`} dataKey={`s${si}_p10`} fill="white" stroke="none" fillOpacity={1} legendType="none" isAnimationActive={false} />,
                 <Line key={`lp${si}`} dataKey={`s${si}_p50`} stroke={s.color} strokeWidth={1.8} strokeDasharray="6 3" dot={false} name={`${s.label} P50`} isAnimationActive={false} />,
               ])}
-              <Line dataKey="rev" name="Revenue" stroke={C.blue} strokeWidth={1.5} dot={{ r: 2 }} />
-              <Line dataKey="cogs" name="COGS" stroke={C.red} strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
-              <Line dataKey="gp" name="Gross Profit" stroke={C.teal} strokeWidth={1.5} dot={{ r: 2 }} />
-              <Line dataKey="sga" name="SG&A" stroke={C.amber} strokeWidth={1} dot={false} strokeDasharray="3 3" />
-              <Line dataKey="ebitda" name="EBITDA" stroke={C.purple} strokeWidth={1.5} dot={{ r: 2 }} />
+              <Line dataKey="rev" name="Revenue" stroke={C.chart1} strokeWidth={1.5} dot={{ r: 2 }} />
+              <Line dataKey="cogs" name="COGS" stroke={C.chart3} strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+              <Line dataKey="gp" name="Gross Profit" stroke={C.chart2} strokeWidth={1.5} dot={{ r: 2 }} />
+              <Line dataKey="sga" name="SG&A" stroke={C.chart4} strokeWidth={1} dot={false} strokeDasharray="3 3" />
+              <Line dataKey="ebitda" name="EBITDA" stroke={C.chart5} strokeWidth={1.5} dot={{ r: 2 }} />
             </ComposedChart>
           </ResponsiveContainer>
         ) : <div style={{ fontSize: 11, color: C.txtt, padding: 20 }}>Loading trend…</div>
@@ -120,9 +120,9 @@ export default function PnLTab({ fiscalYear = 25, period = 6 }) {
           <BarChart data={prodData} margin={{ left: 0, right: 10 }}>
             <CartesianGrid {...GRID} /><XAxis dataKey="name" {...XAXIS} /><YAxis {...YAXIS} tickFormatter={v => fd(v)} />
             <Tooltip {...TT} formatter={v => usd(v)} />
-            <Bar dataKey="revenue" name="Revenue" fill={C.blue} fillOpacity={0.7} radius={[2, 2, 0, 0]} />
-            <Bar dataKey="cogs" name="COGS" fill={C.red} fillOpacity={0.5} radius={[2, 2, 0, 0]} />
-            <Bar dataKey="margin" name="Margin" fill={C.teal} fillOpacity={0.5} radius={[2, 2, 0, 0]} />
+            <Bar dataKey="revenue" name="Revenue" fill={C.chart1} fillOpacity={0.7} radius={[2, 2, 0, 0]} />
+            <Bar dataKey="cogs" name="COGS" fill={C.chart3} fillOpacity={0.5} radius={[2, 2, 0, 0]} />
+            <Bar dataKey="margin" name="Margin" fill={C.chart2} fillOpacity={0.5} radius={[2, 2, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       ) : <div style={{ fontSize: 11, color: C.txtt, padding: 20 }}>No product data</div>,

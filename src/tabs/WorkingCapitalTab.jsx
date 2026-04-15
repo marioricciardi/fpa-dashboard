@@ -100,10 +100,14 @@ export default function WorkingCapitalTab({ fiscalYear = 25, period = 6 }) {
       id: 'wc-gauges', title: 'Cash Conversion Cycle Gauges', span: 2,
       render: () => (
         <div style={{ display: 'flex', justifyContent: 'space-around', flexWrap: 'wrap', gap: 16, padding: '8px 0' }}>
-          <GaugeArc label="DSO" value={dso} max={120} unit=" days" color={dso > 60 ? C.red : dso > 45 ? C.amber : C.teal} />
-          <GaugeArc label="DIO" value={dio} max={120} unit=" days" color={dio > 60 ? C.red : dio > 30 ? C.amber : C.teal} />
-          <GaugeArc label="DPO" value={dpo} max={120} unit=" days" color={dpo < 20 ? C.amber : C.teal} />
-          <GaugeArc label="CCC" value={ccc} max={150} unit=" days" color={ccc > 90 ? C.red : ccc > 60 ? C.amber : C.teal} />
+          <GaugeArc label="DSO" value={dso} max={120} unit=" days" color={dso > 60 ? C.red : dso > 45 ? C.amber : C.teal}
+            meaning="Avg days to collect receivables" target="< 45 days" />
+          <GaugeArc label="DIO" value={dio} max={120} unit=" days" color={dio > 60 ? C.red : dio > 30 ? C.amber : C.teal}
+            meaning="Avg days inventory is held" target="< 30 days" />
+          <GaugeArc label="DPO" value={dpo} max={120} unit=" days" color={dpo < 20 ? C.amber : C.teal}
+            meaning="Avg days to pay suppliers" target="> 20 days" />
+          <GaugeArc label="CCC" value={ccc} max={150} unit=" days" color={ccc > 90 ? C.red : ccc > 60 ? C.amber : C.teal}
+            meaning="Full cash-to-cash cycle" target="< 60 days" />
         </div>
       ),
     },
@@ -132,9 +136,9 @@ export default function WorkingCapitalTab({ fiscalYear = 25, period = 6 }) {
           <ComposedChart data={trendData}>
             <CartesianGrid {...GRID} /><XAxis dataKey="name" {...XAXIS} /><YAxis {...YAXIS} tickFormatter={v => fd(v)} />
             <Tooltip {...TT} formatter={v => usd(v)} /><Legend wrapperStyle={{ fontSize: 10 }} />
-            <Bar dataKey="ca" name="Current Assets" fill={C.blue} fillOpacity={0.4} radius={[2, 2, 0, 0]} />
-            <Bar dataKey="cl" name="Current Liab" fill={C.red} fillOpacity={0.4} radius={[2, 2, 0, 0]} />
-            <Line dataKey="wc" name="Working Capital" stroke={C.teal} strokeWidth={2} dot={{ r: 3 }} />
+            <Bar dataKey="ca" name="Current Assets" fill={C.chart1} fillOpacity={0.4} radius={[2, 2, 0, 0]} />
+            <Bar dataKey="cl" name="Current Liab" fill={C.chart3} fillOpacity={0.4} radius={[2, 2, 0, 0]} />
+            <Line dataKey="wc" name="Working Capital" stroke={C.chart2} strokeWidth={2} dot={{ r: 3 }} />
           </ComposedChart>
         </ResponsiveContainer>
       ),

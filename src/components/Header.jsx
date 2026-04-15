@@ -57,22 +57,14 @@ export default function Header({ fiscalYear, period, onFiscalYearChange, onPerio
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        {useMock && (
-          <span style={{
-            fontSize: 9, fontFamily: 'var(--font-mono)', padding: '2px 7px',
-            borderRadius: 6, background: 'rgba(245,158,11,.15)',
-            color: '#F59E0B', border: '0.5px solid rgba(245,158,11,.3)',
-          }}>
-            MOCK DATA
-          </span>
-        )}
         <span style={{
           fontSize: 10, fontFamily: 'var(--font-mono)', padding: '3px 8px', borderRadius: 6,
-          background: 'rgba(34,197,94,.12)', color: '#22c55e',
-          border: '0.5px solid rgba(34,197,94,.3)',
+          background: useMock ? 'rgba(156,163,175,.12)' : 'rgba(34,197,94,.12)',
+          color: useMock ? '#9CA3AF' : '#22c55e',
+          border: `0.5px solid ${useMock ? 'rgba(156,163,175,.3)' : 'rgba(34,197,94,.3)'}`,
           display: 'flex', alignItems: 'center', gap: 5,
         }}>
-          <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />
+          {!useMock && <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />}
           Connected
         </span>
         {globalLoading && <span style={spinnerStyle} title="Fetching data…" />}
