@@ -25,6 +25,24 @@ const MOCK_REGISTRY = {
   forecast_get_expense:          (p) => import('../data/forecast.js').then(m => m.forecastGetExpense(p)),
   forecast_get_rolling:          (p) => import('../data/forecast.js').then(m => m.forecastGetRolling(p)),
   balancesheet_get_analysis:     (p) => import('../data/balancesheet.js').then(m => m.balancesheetAnalysis(p)),
+  // NB-A: Workforce Analytics
+  workforce_analytics:           (p) => import('../data/liveTools.js').then(m => m.workforceAnalytics(p)),
+  // NB-B: Variance Analytics (consolidated)
+  variance_analytics:            (p) => import('../data/liveTools.js').then(m => m.varianceAnalytics(p)),
+  // NB-C: Revenue & Expense Forecast (consolidated)
+  revenue_expense_forecast:      (p) => import('../data/liveTools.js').then(m => m.revenueExpenseForecast(p)),
+  // NB-D: Working Capital (CCC, AR aging, AR forecast)
+  working_capital_analysis:      (p) => import('../data/liveTools.js').then(m => m.workingCapitalAnalysis(p)),
+  // NB-E: Balance Sheet Risk
+  balance_sheet_risk:            (p) => import('../data/liveTools.js').then(m => m.balanceSheetRisk(p)),
+  // NB-F: Model Diagnostics
+  model_diagnostics:             (p) => import('../data/liveTools.js').then(m => m.modelDiagnostics(p)),
+  // NB-G: Working Capital Analytics (DSO/DIO/DPO forecasts)
+  working_capital_analytics:     (p) => import('../data/liveTools.js').then(m => m.workingCapitalForecast(p)),
+  // NB-H: Statistical Analytics
+  statistical_analytics:         (p) => import('../data/liveTools.js').then(m => m.statisticalAnalytics(p)),
+  // NB-I: Simulation Engine
+  simulation_engine:             (p) => import('../data/liveTools.js').then(m => m.simulationEngine(p)),
 }
 
 /**

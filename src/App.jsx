@@ -10,6 +10,7 @@ import VarianceTab      from './tabs/VarianceTab.jsx'
 import ForecastTab      from './tabs/ForecastTab.jsx'
 import BalanceSheetTab  from './tabs/BalanceSheetTab.jsx'
 import WorkingCapitalTab from './tabs/WorkingCapitalTab.jsx'
+import WorkforceTab      from './tabs/WorkforceTab.jsx'
 import StatisticsTab    from './tabs/StatisticsTab.jsx'
 import SimulationsTab   from './tabs/SimulationsTab.jsx'
 import AgentChatTab     from './tabs/AgentChatTab.jsx'
@@ -21,6 +22,7 @@ const TABS = [
   { id: 'forecast',       label: 'Forecast' },
   { id: 'balancesheet',   label: 'Balance Sheet' },
   { id: 'workingcapital', label: 'Working Capital' },
+  { id: 'workforce',      label: 'Workforce' },
   { id: 'statistics',     label: 'Statistics' },
   { id: 'simulations',    label: 'Simulations', isSim: true },
   { id: 'agentchat',      label: 'Agent Chat' },
@@ -46,6 +48,7 @@ function DashboardInner() {
         <div style={{ display: activeTab === 'forecast' ? 'block' : 'none' }}><ForecastTab fiscalYear={fiscalYear} period={period} /></div>
         <div style={{ display: activeTab === 'balancesheet' ? 'block' : 'none' }}><BalanceSheetTab fiscalYear={fiscalYear} period={period} /></div>
         <div style={{ display: activeTab === 'workingcapital' ? 'block' : 'none' }}><WorkingCapitalTab fiscalYear={fiscalYear} period={period} /></div>
+        <div style={{ display: activeTab === 'workforce' ? 'block' : 'none' }}><WorkforceTab fiscalYear={fiscalYear} /></div>
         <div style={{ display: activeTab === 'statistics' ? 'block' : 'none' }}><StatisticsTab fiscalYear={fiscalYear} period={period} /></div>
         <div style={{ display: activeTab === 'simulations' ? 'block' : 'none' }}><SimulationsTab onNavigateToChat={() => setActiveTab('agentchat')} /></div>
         <div style={{ display: activeTab === 'agentchat' ? 'block' : 'none' }}><AgentChatTab onNavigateTo={setActiveTab} /></div>
