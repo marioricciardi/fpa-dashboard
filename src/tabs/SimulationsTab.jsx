@@ -1,5 +1,5 @@
-// SimulationsTab — FP&A scenario builder with Monte Carlo analysis
-// Flow: Select scenario → Configure parameters → Run → Analyze results
+// SimulationsTab — V5: wired to simulation_engine (NB-I) + client-side Monte Carlo
+// Flow: Select scenario → Configure parameters → Run (client or server) → Analyze results
 import { useState, useMemo, useCallback } from 'react'
 import {
   BarChart, Bar, ComposedChart, Line, Area,
@@ -10,6 +10,7 @@ import {
 import PanelGrid from '../components/PanelGrid.jsx'
 import { AlertRow } from '../components/ChartPrimitives.jsx'
 import { useSimulation, SIM_TEMPLATES } from '../context/SimulationContext.jsx'
+import { useTool } from '../hooks/useTool.js'
 import { C, GRID, XAXIS, YAXIS, TT, TH, TD, TDL, fd, fδ, usd, pctFmt } from '../utils/chartConstants.js'
 
 // ── Styles ──
@@ -213,6 +214,17 @@ function ActiveSimRow({ sim, isSelected, onSelect, onToggle, onRemove }) {
 export default function SimulationsTab({ onNavigateToChat }) {
   const { simulations, addSimulation, removeSimulation, toggleSimulation, clearAll, compoundMode, setCompoundMode } = useSimulation()
 
+  // ── NB-I: Simulation Engine — server-side run history ──
+  const histParams = useMemo(() => ({ action: 'history' }), [])
+  const { data: histData, loading: hL, refetch: rHist } = useTool('simulation_engine', histParams)
+  const serverRuns = histData?.result?.runs ?? []
+
+  // ── NB-I: Simulation Engine — run result (populated after server run) ──
+  const [serverRunId, setServerRunId] = useState(null)
+  const resultParams = useMemo(() => serverRunId ? { action: 'result', run_id: serverRunId } : null, [serverRunId])
+  const { data: resultData, loading: resL } = useTool('simulation_engine', resultParams)
+  const serverResult = resultData?.result ?? null
+
   // --- State ---
   const [selectedTpl, setSelectedTpl] = useState(null)                // template being configured
   const [paramValues, setParamValues] = useState({})                  // user-edited parameter values
@@ -243,6 +255,23 @@ export default function SimulationsTab({ onNavigateToChat }) {
     const firstKPI = Object.keys(sim.results?.kpiImpacts ?? {})[0]
     if (firstKPI) setDistKPI(firstKPI)
   }, [selectedTpl, paramValues, addSimulation])
+
+  // Server-side run via NB-I simulation_engine
+  const { refetch: triggerServerRun } = useTool('simulation_engine', null)
+  const handleServerRun = useCallback(async () => {
+    if (!selectedTpl) return
+    // Map client template ID to server template_id
+    const tplMap = { hiring_freeze: 'hiring_freeze', revenue_shock: 'revenue_shock', cost_inflation: 'cost_inflation', capex_defer: 'capex_defer', interest_rate: 'interest_rate' }
+    const serverTpl = tplMap[selectedTpl.id] ?? selectedTpl.id
+    try {
+      const res = await import('../api/broker.js').then(m => m.callTool('simulation_engine', {
+        action: 'run', template_id: serverTpl, fiscal_year: 25,
+        iterations: 2000, params: paramValues,
+      }))
+      const runId = res?.result?.run_id
+      if (runId) { setServerRunId(runId); rHist() }
+    } catch (e) { console.error('Server simulation failed:', e) }
+  }, [selectedTpl, paramValues, rHist])
 
   const handleResetParams = useCallback(() => {
     if (!selectedTpl) return
@@ -304,9 +333,10 @@ export default function SimulationsTab({ onNavigateToChat }) {
           ))}
           <div style={{ display: 'flex', gap: 10, marginTop: 8, alignItems: 'center' }}>
             <button onClick={handleRun} style={btnPrimary(false)}>▶ Run Monte Carlo</button>
+            <button onClick={handleServerRun} style={btnOutline(C.teal)}>☁ Run on Server</button>
             <button onClick={handleResetParams} style={btnOutline(C.txts)}>Reset Defaults</button>
           </div>
-          <div style={{ fontSize: 8, color: C.txtt, marginTop: 8 }}>2,000 iterations · client-side engine</div>
+          <div style={{ fontSize: 8, color: C.txtt, marginTop: 8 }}>Client: 2,000 iterations · Server: NB-I OCI Function (Oracle ML)</div>
         </div>
       ),
     })
@@ -446,6 +476,55 @@ export default function SimulationsTab({ onNavigateToChat }) {
   if (simulations.length === 0 && !selectedTpl) alerts.push({ level: 'INFO', text: 'Select a scenario template to configure and run a Monte Carlo simulation.', src: 'sim-engine' })
   if (simulations.filter(s => s.active).length > 3) alerts.push({ level: 'WARNING', text: `${simulations.filter(s => s.active).length} active simulations — consider clearing older runs for clarity.`, src: 'sim-engine' })
   if (compoundMode === 'compound' && simulations.filter(s => s.active).length > 1) alerts.push({ level: 'INFO', text: `Compound mode: KPI impacts from ${simulations.filter(s => s.active).length} active scenarios are stacked on dashboard KPIs.`, src: 'sim-engine' })
+  if (serverResult) alerts.push({ level: 'OK', text: `Server run ${serverResult.run_id}: mean impact ${usd(serverResult.summary?.mean_impact)}, P5–P95 ${usd(serverResult.summary?.p5_impact)} – ${usd(serverResult.summary?.p95_impact)}`, src: 'simulation_engine' })
+
+  // ── Server Run History panel (NB-I) ──
+  if (serverRuns.length > 0) {
+    panels.push({
+      id: 'sim-server-history', title: `Server Run History — ${serverRuns.length} runs`, badge: 'fn-simulation-engine', span: 2,
+      render: () => (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>{['Run ID','Template','FY','Iterations','Mean Impact','Median','P5','P95'].map(h => <th key={h} style={TH}>{h}</th>)}</tr></thead>
+            <tbody>{serverRuns.map((r, i) => (
+              <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : C.surf, cursor: 'pointer' }}
+                onClick={() => setServerRunId(r.run_id)}>
+                <td style={{ ...TDL, color: C.blue, textDecoration: 'underline' }}>{r.run_id}</td>
+                <td style={TDL}>{r.template_id}</td>
+                <td style={TD}>FY{r.fiscal_year}</td>
+                <td style={TD}>{(r.iterations ?? 0).toLocaleString()}</td>
+                <td style={{ ...TD, fontWeight: 600, color: (r.mean_impact ?? 0) >= 0 ? C.teal : C.red }}>{usd(r.mean_impact)}</td>
+                <td style={TD}>{usd(r.median_impact)}</td>
+                <td style={TD}>{usd(r.p5_impact)}</td>
+                <td style={TD}>{usd(r.p95_impact)}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      ),
+    })
+  }
+
+  // ── Server Result Detail (when a server run is selected) ──
+  if (serverResult?.summary) {
+    const s = serverResult.summary
+    panels.push({
+      id: 'sim-server-result', title: `Server Result: ${serverResult.run_id} — ${serverResult.template_id}`, badge: 'fn-simulation-engine', span: 1,
+      render: () => (
+        <div style={{ padding: '8px 0' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 11 }}>
+            <div><span style={{ color: C.txtt }}>Mean Impact:</span> <strong style={{ color: (s.mean_impact ?? 0) >= 0 ? C.teal : C.red }}>{usd(s.mean_impact)}</strong></div>
+            <div><span style={{ color: C.txtt }}>Median:</span> <strong>{usd(s.median_impact)}</strong></div>
+            <div><span style={{ color: C.txtt }}>P5:</span> {usd(s.p5_impact)}</div>
+            <div><span style={{ color: C.txtt }}>P95:</span> {usd(s.p95_impact)}</div>
+            <div><span style={{ color: C.txtt }}>Std Dev:</span> {usd(s.std_impact)}</div>
+            <div><span style={{ color: C.txtt }}>Iterations:</span> {(serverResult.iterations ?? 0).toLocaleString()}</div>
+          </div>
+          {serverResult.models_used && <div style={{ fontSize: 9, color: C.txtt, marginTop: 8 }}>Models: {serverResult.models_used}</div>}
+        </div>
+      ),
+    })
+  }
 
   if (alerts.length > 0) {
     panels.push({

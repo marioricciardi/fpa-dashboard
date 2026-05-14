@@ -1,4 +1,4 @@
-// ForecastTab — V4 visual layout with recharts, PanelGrid, KPIChip
+// ForecastTab — V5: wired to revenue_expense_forecast (NB-C) + existing tools
 // Backend: useTool() calls to OCI functions preserved exactly
 import { useMemo, useCallback } from 'react'
 import {
@@ -42,10 +42,23 @@ export default function ForecastTab({ fiscalYear = 25, period = 6 }) {
   const { data: qtrData,  loading: qL, refetch: rQtr } = useTool('forecast_get_quarter', qtrParams)
   const { data: expData,  loading: eL, refetch: rExp } = useTool('forecast_get_expense', expParams)
   const { data: rollData, loading: rL, refetch: rRoll } = useTool('forecast_get_rolling', rollParams)
-  const handleRefresh = useCallback(() => { rQtr(); rExp(); rRoll() }, [rQtr, rExp, rRoll])
+
+  // ── NB-C: Revenue & Expense Forecast (seasonal indices) ──
+  const refParams = useMemo(() => ({ action: 'summary', fiscal_year: fiscalYear, periods: 6 }), [fiscalYear])
+  const { data: refData, loading: rfL, refetch: rRef } = useTool('revenue_expense_forecast', refParams)
+
+  const handleRefresh = useCallback(() => { rQtr(); rExp(); rRoll(); rRef() }, [rQtr, rExp, rRoll, rRef])
 
   const qOk = !!qtrData, eOk = !!expData, rOk = !!rollData
-  const loading = qL || eL || rL
+  const loading = qL || eL || rL || rfL
+
+  // ── NB-C data ──
+  // Backend returns flat arrays (revenue_forecast / seasonal_indices); the older
+  // double-nested shape (forecast.forecast, indices.indices) is kept as a fallback
+  // so old/new fixture layouts both render.
+  const ref = refData?.result ?? refData ?? {}
+  const seasonalIndices = ref.seasonal_indices?.seasonal_indices ?? ref.seasonal_indices ?? []
+  const revFcst = ref.revenue_forecast?.forecast ?? ref.revenue_forecast ?? []
 
   const forecasts = qOk ? fcArr(qtrData) : []
   const apSummary = qOk ? fcSum(qtrData) : {}
@@ -75,22 +88,26 @@ export default function ForecastTab({ fiscalYear = 25, period = 6 }) {
 
   // ── Rolling by period line data ──
   const rollPerData = rPeriods.map(p => ({
-    p: `P${p.period ?? p.period_num ?? '?'}`,
-    actual: p.actual ?? 0,
-    forecast: p.forecast ?? 0,
-    budget: p.budget ?? 0,
+    p: `P${p.period_num ?? p.period ?? '?'}`,
+    actual:   p.actual_amount   ?? p.actual   ?? 0,
+    forecast: p.forecast_amount ?? p.forecast ?? 0,
+    budget:   p.budget_amount   ?? p.budget   ?? 0,
   }))
 
   // ── Expense by category ──
-  const catData = [...eCats].sort((a, b) => (b.forecast ?? b.amount ?? 0) - (a.forecast ?? a.amount ?? 0)).map(c => ({
-    name: c.category || c.name || 'Unknown',
-    value: c.forecast ?? c.amount ?? 0,
-  }))
+  const catData = [...eCats]
+    .sort((a, b) => (b.forecast ?? b.amount ?? 0) - (a.forecast ?? a.amount ?? 0))
+    .map(c => ({
+      name:  c.account_category || c.category || c.name || 'Unknown',
+      value: c.forecast ?? c.amount ?? 0,
+    }))
 
   // ── Expense by period line data ──
   const expPerData = ePeriods.map(p => ({
-    p: `P${p.period ?? p.period_num ?? '?'}`,
-    expense: p.forecast ?? p.amount ?? 0,
+    p:        `P${p.period_num ?? p.period ?? '?'}`,
+    expense:  p.forecast ?? p.amount ?? 0,
+    upper:    p.upper_80 ?? null,
+    lower:    p.lower_80 ?? null,
   }))
 
   // ── CI metrics ──
@@ -237,15 +254,55 @@ export default function ForecastTab({ fiscalYear = 25, period = 6 }) {
     {
       id: 'fc-exp-trend', title: `Expense by Period — ${fyLabel}`, badge: 'fn-forecast-expense', span: 2,
       render: () => expPerData.length > 0 ? (
-        <ResponsiveContainer width="100%" height={130}>
+        <ResponsiveContainer width="100%" height={150}>
           <ComposedChart data={expPerData}>
             <CartesianGrid {...GRID} /><XAxis dataKey="p" {...XAXIS} /><YAxis {...YAXIS} tickFormatter={v => fd(v)} />
-            <Tooltip {...TT} formatter={v => usd(v)} />
-            <Area dataKey="expense" fill={C.blue} fillOpacity={0.08} stroke={C.blue} strokeWidth={2} dot={{ r: 2, fill: C.blue }} />
+            <Tooltip {...TT} formatter={v => usd(v)} /><Legend wrapperStyle={{ fontSize: 10 }} />
+            <Area dataKey="upper" fill={C.chart3} stroke="none" fillOpacity={0.08} legendType="none" />
+            <Area dataKey="lower" fill="white" stroke="none" fillOpacity={1} legendType="none" />
+            <Line dataKey="upper" name="Upper 80%" stroke={C.chart3} strokeWidth={1} strokeDasharray="4 2" dot={false} />
+            <Line dataKey="lower" name="Lower 80%" stroke={C.chart2} strokeWidth={1} strokeDasharray="4 2" dot={false} />
+            <Area dataKey="expense" name="Forecast" fill={C.blue} fillOpacity={0.08} stroke={C.blue} strokeWidth={2} dot={{ r: 2, fill: C.blue }} />
           </ComposedChart>
         </ResponsiveContainer>
       ) : <div style={{ fontSize: 11, color: C.txtt, padding: 20 }}>No period data</div>,
     },
+    ...(seasonalIndices.length > 0 ? [{
+      id: 'fc-seasonal', title: 'Seasonal Indices — NB-C Revenue Seasonality', badge: 'fn-revenue-expense-forecast', span: 1,
+      render: () => (
+        <ResponsiveContainer width="100%" height={130}>
+          <BarChart data={seasonalIndices.map(s => ({
+            name:  `P${s.period_num ?? s.period}`,
+            index: s.seasonal_index ?? s.index ?? (s.raw ? +(s.raw / 0.083).toFixed(3) : 0),
+          }))}>
+            <CartesianGrid {...GRID} /><XAxis dataKey="name" {...XAXIS} /><YAxis {...YAXIS} domain={['auto', 'auto']} />
+            <Tooltip {...TT} />
+            <Bar dataKey="index" name="Seasonal Index" fill={C.chart4} fillOpacity={0.6} radius={[2, 2, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      ),
+    }] : []),
+    ...(revFcst.length > 0 ? [{
+      id: 'fc-rev-fcst', title: 'Revenue Forecast — NB-C', badge: 'fn-revenue-expense-forecast', span: 1,
+      render: () => (
+        <ResponsiveContainer width="100%" height={130}>
+          <ComposedChart data={revFcst.map(f => ({
+            p:        `F${f.period_key ?? f.period_seq}`,
+            actual:   f.actual_amt,
+            forecast: f.predicted_revenue ?? f.forecasted,
+            lower:    f.lower_95,
+            upper:    f.upper_95,
+          }))}>
+            <CartesianGrid {...GRID} /><XAxis dataKey="p" {...XAXIS} /><YAxis {...YAXIS} tickFormatter={v => fd(v)} />
+            <Tooltip {...TT} formatter={v => usd(v)} /><Legend wrapperStyle={{ fontSize: 10 }} />
+            <Area dataKey="upper" fill={C.chart3} stroke="none" fillOpacity={0.08} legendType="none" />
+            <Area dataKey="lower" fill="white" stroke="none" fillOpacity={1} legendType="none" />
+            <Line dataKey="actual"   name="Actual"        stroke={C.chart1} strokeWidth={2} dot={{ r: 2 }} />
+            <Line dataKey="forecast" name="Revenue Fcst"  stroke={C.chart2} strokeWidth={2} strokeDasharray="6 3" dot={{ r: 3 }} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      ),
+    }] : []),
     {
       id: 'fc-alerts', title: `Forecast Alerts — ${alerts.length} Items`, span: 2,
       render: () => <div>{alerts.map((a, i) => <AlertRow key={i} {...a} />)}</div>,

@@ -1,5 +1,5 @@
-// BalanceSheetTab — V4 recharts + PanelGrid + KPIChip
-import { useMemo } from 'react'
+// BalanceSheetTab — V5: wired to balance_sheet_risk (NB-E) + existing balancesheet_get_analysis
+import { useMemo, useCallback } from 'react'
 import {
   BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -8,7 +8,7 @@ import {
 
 import { KPIRail } from '../components/KPIChip.jsx'
 import PanelGrid from '../components/PanelGrid.jsx'
-import { AlertRow } from '../components/ChartPrimitives.jsx'
+import { AlertRow, GaugeArc } from '../components/ChartPrimitives.jsx'
 import { useTool } from '../hooks/useTool.js'
 import { C, GRID, XAXIS, YAXIS, TT, TH, TD, TDL, fd, usd, pctFmt } from '../utils/chartConstants.js'
 
@@ -53,7 +53,14 @@ function AccountTable({ title, accounts, color }) {
 
 export default function BalanceSheetTab({ fiscalYear = 25, period = 6 }) {
   const bsParams = useMemo(() => ({ fiscal_year: fiscalYear, period, comparison_year: fiscalYear - 1, comparison_period: period }), [fiscalYear, period])
-  const { data: toolResult, loading, refetch } = useTool('balancesheet_get_analysis', bsParams)
+  const { data: toolResult, loading: bsL, refetch: rBs } = useTool('balancesheet_get_analysis', bsParams)
+
+  // ── NB-E: Balance Sheet Risk (Z-Score, profitability, cashflow) ──
+  const riskParams = useMemo(() => ({ action: 'summary', fiscal_year: fiscalYear }), [fiscalYear])
+  const { data: riskData, loading: rkL, refetch: rRisk } = useTool('balance_sheet_risk', riskParams)
+  const handleRefresh = useCallback(() => { rBs(); rRisk() }, [rBs, rRisk])
+
+  const loading = bsL || rkL
   const ok = !!toolResult
   const r  = ok ? toolResult.result : null
 
@@ -89,21 +96,35 @@ export default function BalanceSheetTab({ fiscalYear = 25, period = 6 }) {
   const trend = r?.trend || []
   const trendData = trend.map(t => ({ name: t.period_label, Assets: t.total_assets ?? 0, Liabilities: t.total_liabilities ?? 0, Equity: t.total_equity ?? 0 }))
 
-  // ── Chips ──
-  const chips = [
-    { label: 'Total Assets', value: usd(totalA), sub: `CA ${usd(ca)} + NCA ${usd(nca)}` },
-    { label: 'Total Liabilities', value: usd(totalL), sub: `CL ${usd(cl)} + LT ${usd(ncl)}` },
-    { label: 'Total Equity', value: usd(eq), sub: eq > 0 ? 'Positive' : 'Warning', ok: eq > 0, warn: eq <= 0 },
-    { label: 'Working Capital', value: usd(wc), sub: `CA − CL`, ok: wc >= 0, danger: wc < 0 },
-    { label: 'Current Ratio', value: ratio(rat.current_ratio), sub: rat.current_ratio > 1.5 ? 'Healthy' : '< 1.5', ok: rat.current_ratio > 1.5, warn: rat.current_ratio <= 1.5 },
-    { label: 'Quick Ratio', value: ratio(rat.quick_ratio), sub: rat.quick_ratio > 1 ? 'Healthy' : '< 1.0', ok: rat.quick_ratio > 1 },
-    { label: 'Debt / Assets', value: rat.debt_to_assets != null ? pctFmt(rat.debt_to_assets * 100) : 'N/A', sub: 'TL / TA', ok: rat.debt_to_assets < 0.5 },
-    { label: 'Debt / Equity', value: ratio(rat.debt_to_equity), sub: 'TL / TE', ok: rat.debt_to_equity < 1 },
-    { label: 'Equity Multiplier', value: ratio(rat.equity_multiplier), sub: 'TA / TE' },
-    { label: 'Balance Check', value: balanced === true ? 'BALANCED ✓' : balanced === false ? 'IMBALANCE' : '—', sub: balanced === false ? usd(meta.imbalance_amount) : 'A − (L+E) = 0', ok: balanced === true, danger: balanced === false },
-  ]
+  // ── NB-E Risk data ──
+  const risk = riskData?.result ?? riskData ?? {}
+  const zscore = risk.zscore?.zscore_details?.[0] ?? risk.zscore_details?.[0] ?? {}
+  const zZone  = zscore.z_zone ?? risk.zone_summary ? Object.keys(risk.zone_summary ?? {})[0] : null
+  const profRow = risk.profitability?.profitability?.[0] ?? {}
+  const riskScores = risk.risk_scores?.risk_scores ?? []
 
-  if (loading && !ok) return <div className="tab-loading">Loading balance sheet…</div>
+  // KPI chips — primary BS metrics + NB-E risk overlays
+  const chips = [
+    { label: 'Total Assets', value: usd(totalA), sub: fyLabel, ok: totalA > 0, danger: totalA < 0 },
+    { label: 'Total Liab', value: usd(totalL), sub: fyLabel },
+    { label: 'Equity', value: usd(eq), sub: fyLabel, ok: eq > 0, danger: eq < 0 },
+    { label: 'Working Capital', value: usd(wc), sub: 'CA − CL', ok: wc > 0, danger: wc < 0 },
+    { label: 'Current Ratio', value: ratio(rat.current_ratio), sub: '> 1.5 healthy',
+      ok: rat.current_ratio > 1.5, warn: rat.current_ratio > 1 && rat.current_ratio <= 1.5, danger: rat.current_ratio <= 1 },
+    { label: 'Quick Ratio', value: ratio(rat.quick_ratio), sub: '> 1 healthy',
+      ok: rat.quick_ratio > 1, danger: rat.quick_ratio < 1 },
+    { label: 'Debt / Equity', value: ratio(rat.debt_to_equity), sub: '< 2 healthy',
+      ok: rat.debt_to_equity < 2, danger: rat.debt_to_equity > 3 },
+    { label: 'Balanced', value: balanced ? 'Yes' : 'No', sub: 'A = L + E', ok: balanced, danger: !balanced },
+  ]
+  if (zscore.textbook_zscore != null) {
+    chips.push({ label: 'Altman Z', value: zscore.textbook_zscore.toFixed(2), sub: zZone ?? '—',
+      ok: zZone === 'SAFE', warn: zZone === 'GREY', danger: zZone === 'DISTRESS' })
+  }
+  if (profRow.roa != null) chips.push({ label: 'ROA', value: pctFmt(profRow.roa * 100), sub: 'Return on Assets' })
+  if (profRow.roe != null) chips.push({ label: 'ROE', value: pctFmt(profRow.roe * 100), sub: 'Return on Equity' })
+
+  if (loading && !ok && !riskData) return <div className="tab-loading">Loading balance sheet…</div>
 
   const panels = [
     {
@@ -172,9 +193,39 @@ export default function BalanceSheetTab({ fiscalYear = 25, period = 6 }) {
       id: 'bs-eq', title: 'Equity Accounts', span: 2,
       render: () => <AccountTable title="Equity" accounts={b.equity.accounts} color={C.purple} />,
     }] : []),
+    ...(zscore.textbook_zscore != null ? [{
+      id: 'bs-zscore', title: `Altman Z-Score — ${zZone ?? '—'}`, badge: 'fn-balance-sheet-risk', span: 1,
+      render: () => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '8px 0' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-around', flexWrap: 'wrap', gap: 12 }}>
+            <GaugeArc label="Z-Score" value={zscore.textbook_zscore} max={5} unit=""
+              color={zZone === 'SAFE' ? C.teal : zZone === 'GREY' ? C.amber : C.red}
+              meaning="Altman bankruptcy predictor" target="> 2.99 SAFE" />
+          </div>
+          <div style={{ fontSize: 10, color: C.txtt, padding: '0 8px' }}>
+            {['x1_wc_assets','x2_equity_assets','x3_ebit_assets','x4_equity_liab','x5_revenue_assets']
+              .filter(k => zscore[k] != null)
+              .map(k => <span key={k} style={{ marginRight: 12 }}>{k.replace('_', ' ')}: {zscore[k].toFixed(3)}</span>)}
+          </div>
+        </div>
+      ),
+    }] : []),
+    ...(profRow.roa != null ? [{
+      id: 'bs-profit', title: 'Profitability Ratios — NB-E', badge: 'fn-balance-sheet-risk', span: 1,
+      render: () => (
+        <div style={{ display: 'flex', justifyContent: 'space-around', flexWrap: 'wrap', gap: 12, padding: '8px 0' }}>
+          <GaugeArc label="ROA" value={(profRow.roa ?? 0) * 100} max={30} unit="%" color={(profRow.roa ?? 0) > 0.08 ? C.teal : C.amber}
+            meaning="Return on Assets" target="> 8%" />
+          <GaugeArc label="ROE" value={(profRow.roe ?? 0) * 100} max={40} unit="%" color={(profRow.roe ?? 0) > 0.12 ? C.teal : C.amber}
+            meaning="Return on Equity" target="> 12%" />
+          <GaugeArc label="EBIT Margin" value={(profRow.ebit_margin ?? 0) * 100} max={30} unit="%" color={(profRow.ebit_margin ?? 0) > 0.10 ? C.teal : C.amber}
+            meaning="EBIT / Revenue" target="> 10%" />
+        </div>
+      ),
+    }] : []),
   ]
 
   return <div>
-    <div className="tab-header"><span className="tab-header__title">Balance Sheet</span><button className="tab-header__btn" onClick={refetch} disabled={loading}>↻ Refresh</button></div>
+    <div className="tab-header"><span className="tab-header__title">Balance Sheet</span><button className="tab-header__btn" onClick={handleRefresh} disabled={loading}>↻ Refresh</button></div>
     <KPIRail chips={chips} /><PanelGrid panels={panels} /></div>
 }

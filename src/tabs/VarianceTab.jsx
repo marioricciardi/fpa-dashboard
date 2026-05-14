@@ -1,8 +1,8 @@
-// VarianceTab — V4 visual layout with recharts, PanelGrid, KPIChip
+// VarianceTab — V5: wired to variance_analytics (NB-B) + existing tools
 import { useMemo, useCallback } from 'react'
 import {
-  BarChart, Bar, ScatterChart, Scatter,
-  XAxis, YAxis, CartesianGrid, Tooltip,
+  BarChart, Bar, ScatterChart, Scatter, ComposedChart, Line, Area,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, Cell, ZAxis,
 } from 'recharts'
 
@@ -28,7 +28,12 @@ export default function VarianceTab({ fiscalYear = 25, period = 6 }) {
   const pcParams  = useMemo(() => ({ comparison_type: 'YoY', fiscal_year: fiscalYear, period }), [fiscalYear, period])
   const { data: bvaData, loading: bvaLoading, refetch: rBva } = useTool('variance_get_budget_vs_actual', bvaParams)
   const { data: pcData,  loading: pcLoading, refetch: rPc }  = useTool('variance_get_period_comparison', pcParams)
-  const handleRefresh = useCallback(() => { rBva(); rPc() }, [rBva, rPc])
+
+  // ── NB-B: Variance Analytics (anomalies + STL decomposition) ──
+  const vaParams = useMemo(() => ({ action: 'summary', fiscal_year: fiscalYear, period, top_n: 20 }), [fiscalYear, period])
+  const { data: vaData, loading: vaL, refetch: rVa } = useTool('variance_analytics', vaParams)
+
+  const handleRefresh = useCallback(() => { rBva(); rPc(); rVa() }, [rBva, rPc, rVa])
 
   const bvaOk = !!bvaData
   const pcOk  = !!pcData
@@ -36,7 +41,13 @@ export default function VarianceTab({ fiscalYear = 25, period = 6 }) {
   const drivers = bvaOk ? (bvaData.result?.drivers ?? bvaData.drivers ?? []) : []
   const metaObj = bvaOk ? (bvaData.result?.metadata ?? bvaData.metadata ?? {}) : {}
   const p = pcOk ? pcData.result : null
-  const loading = bvaLoading || pcLoading
+  const loading = bvaLoading || pcLoading || vaL
+
+  // ── NB-B data ──
+  const va = vaData?.result ?? vaData ?? {}
+  const anomalies = va.anomalies?.scored_periods ?? []
+  const anomalyCount = va.anomalies?.anomaly_count ?? anomalies.filter(a => !a.is_normal).length
+  const stlRows = va.stl_decomposition?.stl ?? []
 
   const fyLabel = `FY20${String(fiscalYear).padStart(2, '0')}`
 
@@ -73,9 +84,10 @@ export default function VarianceTab({ fiscalYear = 25, period = 6 }) {
     { label: 'Net Inc YoY', value: pctFmt(p?.deltas?.net_income?.pct), sub: usd(p?.deltas?.net_income?.amount ?? 0), ok: (p?.deltas?.net_income?.pct ?? 0) > 0 },
     { label: 'GM Δ', value: `${p?.deltas?.gross_margin_pct?.amount != null ? (p.deltas.gross_margin_pct.amount >= 0 ? '+' : '') + p.deltas.gross_margin_pct.amount : 0}pp`, sub: 'YoY percentage points' },
     { label: 'Unfavorable', value: String(unfav), sub: `accounts over budget`, danger: unfav > 0 },
+    ...(anomalyCount > 0 ? [{ label: 'Anomalies', value: `${anomalyCount}`, sub: 'NB-B flagged', warn: anomalyCount > 0 }] : []),
   ]
 
-  if (loading && !bvaOk && !pcOk) return <div className="tab-loading">Loading variance data…</div>
+  if (loading && !bvaOk && !pcOk && !vaData) return <div className="tab-loading">Loading variance data…</div>
 
   const panels = [
     {
@@ -141,6 +153,40 @@ export default function VarianceTab({ fiscalYear = 25, period = 6 }) {
       id: 'var-alerts', title: `Variance Alerts — ${alerts.length} Items`, span: 1,
       render: () => <div>{alerts.map((a, i) => <AlertRow key={i} {...a} />)}</div>,
     },
+    ...(anomalies.length > 0 ? [{
+      id: 'var-anomalies', title: `Anomaly Detection — ${anomalyCount} flagged`, badge: 'fn-variance-analytics', span: 1,
+      render: () => (
+        <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>{['Period','Account','Variance','Score','Normal'].map(h => <th key={h} style={TH}>{h}</th>)}</tr></thead>
+            <tbody>{anomalies.map((a, i) => (
+              <tr key={i} style={{ background: !a.is_normal ? 'rgba(255,87,51,0.08)' : i % 2 === 0 ? 'transparent' : C.surf }}>
+                <td style={TDL}>P{a.period_num}</td>
+                <td style={TDL}>{a.account_desc ?? `Acct ${a.case_id}`}</td>
+                <td style={{ ...TD, color: (a.variance ?? 0) > 0 ? C.red : C.teal }}>{usd(a.variance)}</td>
+                <td style={TD}>{a.anomaly_score?.toFixed(3)}</td>
+                <td style={TD}>{a.is_normal ? '✓' : '✗'}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      ),
+    }] : []),
+    ...(stlRows.length > 0 ? [{
+      id: 'var-stl', title: 'STL Decomposition — Trend / Seasonal / Residual', badge: 'fn-variance-analytics', span: 2,
+      render: () => (
+        <ResponsiveContainer width="100%" height={160}>
+          <ComposedChart data={stlRows}>
+            <CartesianGrid {...GRID} /><XAxis dataKey="period_seq" {...XAXIS} /><YAxis {...YAXIS} tickFormatter={v => fd(v)} />
+            <Tooltip {...TT} formatter={v => usd(v)} /><Legend wrapperStyle={{ fontSize: 10 }} />
+            <Line dataKey="observed" name="Observed" stroke={C.chart2} strokeWidth={2} dot={{ r: 2 }} />
+            <Line dataKey="trend" name="Trend" stroke={C.chart1} strokeWidth={2} strokeDasharray="6 3" dot={false} />
+            <Bar dataKey="seasonal" name="Seasonal" fill={C.chart3} fillOpacity={0.4} radius={[2, 2, 0, 0]} />
+            <Bar dataKey="residual" name="Residual" fill={C.chart5} fillOpacity={0.3} radius={[2, 2, 0, 0]} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      ),
+    }] : []),
   ]
 
   return <div>

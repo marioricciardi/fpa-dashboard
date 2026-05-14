@@ -1,5 +1,5 @@
-// WorkingCapitalTab — V4 new tab: DSO, DPO, DIO, CCC analysis from balance sheet data
-import { useMemo } from 'react'
+// WorkingCapitalTab — V5: wired to working_capital_analysis + working_capital_analytics
+import { useMemo, useCallback } from 'react'
 import {
   ComposedChart, Line, BarChart, Bar, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -11,79 +11,83 @@ import PanelGrid from '../components/PanelGrid.jsx'
 import { GaugeArc, AlertRow } from '../components/ChartPrimitives.jsx'
 import { useTool } from '../hooks/useTool.js'
 import { useSimulation } from '../context/SimulationContext.jsx'
-import { C, GRID, XAXIS, YAXIS, TT, fd, usd, pctFmt } from '../utils/chartConstants.js'
+import { C, GRID, XAXIS, YAXIS, TT, TH, TD, TDL, fd, usd, pctFmt } from '../utils/chartConstants.js'
 
-function bs(r) { return r?.balance_sheet ?? r ?? {} }
 function safe(v) { return typeof v === 'number' && isFinite(v) ? v : 0 }
 function days(v) { return v == null || !isFinite(v) ? 'N/A' : `${v.toFixed(1)} days` }
 
 export default function WorkingCapitalTab({ fiscalYear = 25, period = 6 }) {
-  const bsParams = useMemo(() => ({ fiscal_year: fiscalYear, period, comparison_year: fiscalYear - 1, comparison_period: period }), [fiscalYear, period])
-  const { data: toolResult, loading, refetch } = useTool('balancesheet_get_analysis', bsParams)
+  // ── NB-D: CCC, AR aging, AR forecast ──
+  const wcParams = useMemo(() => ({ action: 'summary', fiscal_year: fiscalYear, periods: 3, top_n: 20 }), [fiscalYear])
+  const { data: wcData, loading: wcL, refetch: rWc } = useTool('working_capital_analysis', wcParams)
+
+  // ── NB-G: DSO/DIO/DPO time-series forecasts + trend ──
+  const wcaParams = useMemo(() => ({ action: 'summary', fiscal_year: fiscalYear, periods: 6 }), [fiscalYear])
+  const { data: wcaData, loading: wcaL, refetch: rWca } = useTool('working_capital_analytics', wcaParams)
+
+  const handleRefresh = useCallback(() => { rWc(); rWca() }, [rWc, rWca])
   const { activeSimulations, isAnyActive } = useSimulation()
-  const ok = !!toolResult
-  const r  = ok ? toolResult.result : null
-  const b  = ok ? bs(r) : null
-  const rat = r?.ratios ?? {}
+
+  const loading = wcL || wcaL
+  const wc  = wcData?.result ?? wcData ?? {}
+  const wca = wcaData?.result ?? wcaData ?? {}
 
   const fyLabel = `FY20${String(fiscalYear).padStart(2, '0')}`
 
-  // Extract balance sheet values
-  const ca  = safe(b?.assets?.current_assets?.total)
-  const nca = safe(b?.assets?.non_current_assets?.total)
-  const cl  = safe(b?.liabilities?.current_liabilities?.total)
-  const ncl = safe(b?.liabilities?.non_current_liabilities?.total)
-  const eq  = safe(b?.equity?.total)
-  const totalA = safe(b?.total_assets) || (ca + nca)
-  const totalL = safe(b?.total_liabilities) || (cl + ncl)
-  const wc = ca - cl
+  // ── CCC metrics from working_capital_analysis ──
+  const dso = safe(wc.dso)
+  const dio = safe(wc.dio)
+  const dpo = safe(wc.dpo)
+  const ccc = safe(wc.ccc)
+  const ar  = safe(wc.ar_balance)
+  const ap  = safe(wc.ap_balance)
+  const inv = safe(wc.inventory_value)
+  const wcVal = safe(wc.working_capital ?? (ar + inv - ap))
+  const curRatio = safe(wc.current_ratio)
 
-  // Derive WC metrics (approximate from BS data — real DSO/DPO would need AR/AP/Revenue)
-  const ar = safe(b?.assets?.current_assets?.accounts?.filter(a => /receiv/i.test(a.account_desc)).reduce((s, a) => s + safe(a.balance), 0))
-  const inv = safe(b?.assets?.current_assets?.accounts?.filter(a => /inventor/i.test(a.account_desc)).reduce((s, a) => s + safe(a.balance), 0))
-  const ap = safe(Math.abs(b?.liabilities?.current_liabilities?.accounts?.filter(a => /payab/i.test(a.account_desc)).reduce((s, a) => s + safe(a.balance), 0) ?? 0))
+  // AR aging
+  const arAging  = wc.ar_aging?.aging_buckets ?? []
+  const arFcst   = wc.ar_forecast?.forecast ?? []
 
-  // Use annual revenue approximation from ratios or default
-  const annualRevEst = totalA > 0 ? totalA * 0.8 : 1 // rough approximation
-  const dailyRev = annualRevEst / 365
-  const dailyCOGS = dailyRev * 0.65
+  // ── Forecasts from working_capital_analytics ──
+  const dsoFcst = wca.dso_forecast?.forecast ?? []
+  const dioFcst = wca.dio_forecast?.forecast ?? []
+  const dpoFcst = wca.dpo_forecast?.forecast ?? []
+  const trend   = wca.trend?.trend ?? wca.trend ?? []
 
-  const dso = dailyRev > 0 ? ar / dailyRev : 0
-  const dio = dailyCOGS > 0 ? inv / dailyCOGS : 0
-  const dpo = dailyCOGS > 0 ? ap / dailyCOGS : 0
-  const ccc = dso + dio - dpo
-
-  // Build trend from comparison data
-  const trend = r?.trend || []
-  const trendData = trend.map(t => ({
-    name: t.period_label,
-    wc: safe(t.total_assets) * 0.4 - safe(t.total_liabilities) * 0.3, // approximation
-    ca: safe(t.total_assets) * 0.4,
-    cl: safe(t.total_liabilities) * 0.3,
-  }))
-
-  // WC composition bar
-  const wcComposition = [
-    { name: 'Cash', value: safe(b?.assets?.current_assets?.accounts?.filter(a => /cash/i.test(a.account_desc)).reduce((s, a) => s + safe(a.balance), 0)) },
-    { name: 'A/R', value: ar },
-    { name: 'Inventory', value: inv },
-    { name: 'Other CA', value: Math.max(0, ca - ar - inv - safe(b?.assets?.current_assets?.accounts?.filter(a => /cash/i.test(a.account_desc)).reduce((s, a) => s + safe(a.balance), 0))) },
-    { name: 'A/P', value: -ap },
-    { name: 'Other CL', value: -(cl - ap) },
+  // WC composition bar — prefer NB-G's GBOBJ-classified composition; fall back
+  // to NB-D balances + a 30% cash approximation only if NB-G isn't loaded.
+  const wcaComposition = Array.isArray(wca.composition) ? wca.composition.filter(d => d.value !== 0) : []
+  const cash = safe(wc.cash_balance ?? wcaComposition.find(c => c.name === 'Cash')?.value ?? wcVal * 0.3)
+  const wcComposition = wcaComposition.length > 0 ? wcaComposition : [
+    { name: 'Cash', value: cash }, { name: 'A/R', value: ar },
+    { name: 'Inventory', value: inv }, { name: 'Other CA', value: Math.max(0, wcVal - cash - ar - inv + ap) },
+    { name: 'A/P', value: -ap }, { name: 'Other CL', value: 0 },
   ].filter(d => d.value !== 0)
+
+  // Trend chart data from NB-G
+  const trendData = Array.isArray(trend) ? trend.map(t => ({
+    name: `FY${t.fiscal_year ?? t.sequence_id}`,
+    dso: safe(t.dso), dio: safe(t.dio), dpo: safe(t.dpo), ccc: safe(t.ccc),
+  })) : []
+
+  // DSO forecast chart (merge history + forecast from NB-G)
+  const dsoHistory = wca.dso_forecast?.history ?? []
+  const dsoChartData = [...dsoHistory.map(h => ({ p: `H${h.period_seq}`, actual: h.actual, forecast: null })),
+    ...dsoFcst.map(f => ({ p: `F${f.period_seq}`, actual: null, forecast: f.forecasted, lower: f.lower_95, upper: f.upper_95 }))]
 
   // Alerts
   const alerts = []
-  if (wc < 0) alerts.push({ level: 'CRITICAL', text: `Negative working capital: ${usd(wc)}. Liquidity risk.`, src: 'balancesheet' })
-  if (ccc > 90) alerts.push({ level: 'WARNING', text: `Cash conversion cycle ${days(ccc)} exceeds 90-day threshold.`, src: 'derived' })
-  if (dso > 60) alerts.push({ level: 'WARNING', text: `DSO of ${days(dso)} suggests slow collections.`, src: 'derived' })
-  if (rat.current_ratio < 1.2) alerts.push({ level: 'WARNING', text: `Current ratio ${(rat.current_ratio ?? 0).toFixed(2)} below 1.2 — tight liquidity.`, src: 'balancesheet' })
-  if (wc > 0 && ccc <= 60) alerts.push({ level: 'OK', text: `Working capital positive (${usd(wc)}) and CCC ${days(ccc)} within target.`, src: 'derived' })
+  if (wcVal < 0) alerts.push({ level: 'CRITICAL', text: `Negative working capital: ${usd(wcVal)}. Liquidity risk.`, src: 'working_capital_analysis' })
+  if (ccc > 90) alerts.push({ level: 'WARNING', text: `Cash conversion cycle ${days(ccc)} exceeds 90-day threshold.`, src: 'working_capital_analysis' })
+  if (dso > 60) alerts.push({ level: 'WARNING', text: `DSO of ${days(dso)} suggests slow collections.`, src: 'working_capital_analysis' })
+  if (curRatio > 0 && curRatio < 1.2) alerts.push({ level: 'WARNING', text: `Current ratio ${curRatio.toFixed(2)} below 1.2 — tight liquidity.`, src: 'working_capital_analysis' })
+  if (arAging.some(b => b.risk === 'CRITICAL')) alerts.push({ level: 'CRITICAL', text: `AR aging: ${usd(arAging.filter(b => b.risk === 'CRITICAL').reduce((s, b) => s + (b.amount ?? 0), 0))} past 120 days.`, src: 'working_capital_analysis' })
+  if (wcVal > 0 && ccc <= 60) alerts.push({ level: 'OK', text: `Working capital positive (${usd(wcVal)}) and CCC ${days(ccc)} within target.`, src: 'working_capital_analysis' })
 
   const chips = [
-    { label: 'Working Capital', value: usd(wc), sub: 'CA − CL', ok: wc > 0, danger: wc < 0, kpiKey: 'working_capital' },
-    { label: 'Current Ratio', value: (rat.current_ratio ?? 0).toFixed(2), sub: 'CA / CL', ok: rat.current_ratio > 1.5, warn: rat.current_ratio <= 1.5 },
-    { label: 'Quick Ratio', value: (rat.quick_ratio ?? 0).toFixed(2), sub: '(CA-Inv) / CL', ok: rat.quick_ratio > 1 },
+    { label: 'Working Capital', value: usd(wcVal), sub: 'CA − CL', ok: wcVal > 0, danger: wcVal < 0, kpiKey: 'working_capital' },
+    { label: 'Current Ratio', value: curRatio ? curRatio.toFixed(2) : '—', sub: 'CA / CL', ok: curRatio > 1.5, warn: curRatio > 0 && curRatio <= 1.5 },
     { label: 'DSO', value: days(dso), sub: 'Days Sales Outstanding' },
     { label: 'DIO', value: days(dio), sub: 'Days Inventory Outstanding' },
     { label: 'DPO', value: days(dpo), sub: 'Days Payable Outstanding' },
@@ -91,9 +95,10 @@ export default function WorkingCapitalTab({ fiscalYear = 25, period = 6 }) {
     { label: 'A/R', value: usd(ar), sub: 'Receivables' },
     { label: 'Inventory', value: usd(inv), sub: 'Current inventory' },
     { label: 'A/P', value: usd(ap), sub: 'Payables' },
+    { label: 'Periods Fcst', value: `${dsoFcst.length}`, sub: 'DSO/DIO/DPO forecast' },
   ]
 
-  if (loading && !ok) return <div className="tab-loading">Loading working capital…</div>
+  if (loading && !wcData && !wcaData) return <div className="tab-loading">Loading working capital…</div>
 
   const panels = [
     {
@@ -113,7 +118,7 @@ export default function WorkingCapitalTab({ fiscalYear = 25, period = 6 }) {
     },
     {
       id: 'wc-composition', title: `Working Capital Composition — ${fyLabel} P${period}`,
-      badge: 'fn-balancesheet', span: 1,
+      badge: 'fn-working-capital', span: 1,
       render: () => wcComposition.length > 0 ? (
         <ResponsiveContainer width="100%" height={Math.max(100, wcComposition.length * 26)}>
           <BarChart data={wcComposition} layout="vertical" margin={{ left: 60, right: 10 }}>
@@ -129,16 +134,45 @@ export default function WorkingCapitalTab({ fiscalYear = 25, period = 6 }) {
         </ResponsiveContainer>
       ) : <div style={{ fontSize: 11, color: C.txtt, padding: 20 }}>No WC data</div>,
     },
-    ...(trendData.length > 0 ? [{
-      id: 'wc-trend', title: 'Working Capital Trend', badge: 'fn-balancesheet', span: 1,
+    ...(arAging.length > 0 ? [{
+      id: 'wc-ar-aging', title: `AR Aging — Total ${usd(ar)}`, badge: 'fn-working-capital', span: 1,
+      render: () => (
+        <ResponsiveContainer width="100%" height={Math.max(100, arAging.length * 26)}>
+          <BarChart data={arAging} layout="vertical" margin={{ left: 50, right: 10 }}>
+            <CartesianGrid {...GRID} horizontal={false} vertical /><XAxis type="number" {...XAXIS} tickFormatter={v => fd(v)} />
+            <YAxis dataKey="bucket" type="category" tick={{ fontSize: 9, fill: C.txtt }} axisLine={false} tickLine={false} width={50} />
+            <Tooltip {...TT} formatter={v => usd(v)} />
+            <Bar dataKey="amount" name="Amount" fill={C.chart1} fillOpacity={0.6} radius={[0, 3, 3, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      ),
+    }] : []),
+    ...(dsoChartData.length > 0 ? [{
+      id: 'wc-dso-fcst', title: 'DSO Forecast — fn-working-capital-analytics', badge: 'fn-wc-analytics', span: 1,
       render: () => (
         <ResponsiveContainer width="100%" height={150}>
+          <ComposedChart data={dsoChartData}>
+            <CartesianGrid {...GRID} /><XAxis dataKey="p" {...XAXIS} /><YAxis {...YAXIS} />
+            <Tooltip {...TT} /><Legend wrapperStyle={{ fontSize: 10 }} />
+            {dsoChartData.some(d => d.upper) && <Area dataKey="upper" fill={C.chart3} stroke="none" fillOpacity={0.08} legendType="none" />}
+            {dsoChartData.some(d => d.lower) && <Area dataKey="lower" fill="white" stroke="none" fillOpacity={1} legendType="none" />}
+            <Line dataKey="actual" name="Actual DSO" stroke={C.chart2} strokeWidth={2} dot={{ r: 3 }} connectNulls={false} />
+            <Line dataKey="forecast" name="Forecast DSO" stroke={C.chart5} strokeWidth={2} strokeDasharray="6 3" dot={{ r: 3 }} connectNulls={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      ),
+    }] : []),
+    ...(trendData.length > 0 ? [{
+      id: 'wc-trend', title: 'Working Capital Trend — DSO / DIO / DPO / CCC', badge: 'fn-wc-analytics', span: 2,
+      render: () => (
+        <ResponsiveContainer width="100%" height={160}>
           <ComposedChart data={trendData}>
-            <CartesianGrid {...GRID} /><XAxis dataKey="name" {...XAXIS} /><YAxis {...YAXIS} tickFormatter={v => fd(v)} />
-            <Tooltip {...TT} formatter={v => usd(v)} /><Legend wrapperStyle={{ fontSize: 10 }} />
-            <Bar dataKey="ca" name="Current Assets" fill={C.chart1} fillOpacity={0.4} radius={[2, 2, 0, 0]} />
-            <Bar dataKey="cl" name="Current Liab" fill={C.chart3} fillOpacity={0.4} radius={[2, 2, 0, 0]} />
-            <Line dataKey="wc" name="Working Capital" stroke={C.chart2} strokeWidth={2} dot={{ r: 3 }} />
+            <CartesianGrid {...GRID} /><XAxis dataKey="name" {...XAXIS} /><YAxis {...YAXIS} />
+            <Tooltip {...TT} /><Legend wrapperStyle={{ fontSize: 10 }} />
+            <Bar dataKey="dso" name="DSO" fill={C.chart1} fillOpacity={0.5} radius={[2, 2, 0, 0]} />
+            <Bar dataKey="dio" name="DIO" fill={C.chart3} fillOpacity={0.5} radius={[2, 2, 0, 0]} />
+            <Bar dataKey="dpo" name="DPO" fill={C.chart4} fillOpacity={0.5} radius={[2, 2, 0, 0]} />
+            <Line dataKey="ccc" name="CCC" stroke={C.chart2} strokeWidth={2} dot={{ r: 3 }} />
           </ComposedChart>
         </ResponsiveContainer>
       ),
@@ -150,6 +184,6 @@ export default function WorkingCapitalTab({ fiscalYear = 25, period = 6 }) {
   ]
 
   return <div>
-    <div className="tab-header"><span className="tab-header__title">Working Capital</span><button className="tab-header__btn" onClick={refetch} disabled={loading}>↻ Refresh</button></div>
+    <div className="tab-header"><span className="tab-header__title">Working Capital</span><button className="tab-header__btn" onClick={handleRefresh} disabled={loading}>↻ Refresh</button></div>
     <KPIRail chips={chips} /><PanelGrid panels={panels} /></div>
 }
