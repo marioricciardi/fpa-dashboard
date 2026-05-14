@@ -536,3 +536,257 @@ export function simulationEngine(params = {}) {
     metadata: { action: 'run', generated_utc: now() },
   } }
 }
+
+
+/* ───────────────────────────────────────────────────────────── */
+/*  inventory  (fn-inventory: position + history + demand_forecast) */
+/* ───────────────────────────────────────────────────────────── */
+export function inventory(params = {}) {
+  const action = params.action ?? 'position'
+
+  if (action === 'history') {
+    const metric = params.metric ?? 'turnover'
+    const window = params.period_window ?? 8
+    const rows = Array.from({ length: window }, (_, i) => ({
+      period_seq: i + 1,
+      period_label: `Q${(i % 4) + 1} FY${24 + Math.floor(i / 4)}`,
+      value: metric === 'turnover' ? +(4.5 + Math.sin(i / 2) * 1.2).toFixed(2)
+           : metric === 'write_off_rate' ? +(0.7 + i * 0.03).toFixed(3)
+           : Math.round(40 + i * 2),
+    }))
+    return { result: { metric, rows, metadata: { action, generated_utc: now() } } }
+  }
+
+  if (action === 'demand_forecast') {
+    const horizon = params.horizon_weeks ?? 13
+    const rows = Array.from({ length: 12 }, (_, i) => ({
+      item_id: `ITEM-${1000 + i}`,
+      branch: ['M30', 'M40', 'M50'][i % 3],
+      velocity_tier: ['A', 'A', 'B', 'C'][i % 4],
+      model_used: ['FPA_INVENTORY_DEMAND_A_MODEL', 'FPA_INVENTORY_DEMAND_B_MODEL', 'tier_c_baseline'][i % 3],
+      forecasted_demand_p50: Math.round(500 + Math.sin(i) * 200),
+      p10_demand: Math.round(350 + Math.sin(i) * 150),
+      p90_demand: Math.round(750 + Math.sin(i) * 300),
+      safety_stock_qty: Math.round(120 + i * 8),
+      current_qty: Math.round(380 + i * 25),
+      recommended_reorder_qty: Math.max(0, Math.round(300 + Math.sin(i) * 200)),
+    }))
+    return { result: { horizon_weeks: horizon, confidence_pct: params.confidence_pct ?? 80,
+      safety_stock_days: params.safety_stock_days ?? 14, rows, row_count: rows.length,
+      metadata: { action, generated_utc: now() } } }
+  }
+
+  // position
+  const view = params.view ?? 'summary'
+  if (view === 'summary') {
+    return { result: { total_value: 3200000, item_count: 1240, branch_count: 8,
+      slow_moving_value: 240000, slow_moving_pct: 7.5,
+      tier_a_value: 1850000, tier_b_value: 980000, tier_c_value: 370000,
+      metadata: { action: 'position', view, generated_utc: now() } } }
+  }
+  if (view === 'slow_moving') {
+    const rows = Array.from({ length: 10 }, (_, i) => ({
+      item_id: `SLOW-${100 + i}`, branch: 'M30',
+      qty_on_hand: 80 - i * 4, value: Math.round(8000 - i * 400),
+      days_since_movement: 90 + i * 8, category: ['RAW', 'WIP', 'FG'][i % 3],
+    }))
+    return { result: { rows, row_count: rows.length, metadata: { action: 'position', view } } }
+  }
+  // by_item / by_branch / by_category — simple synthetic
+  return { result: { rows: [], view, metadata: { action: 'position', view, generated_utc: now() } } }
+}
+
+
+/* ───────────────────────────────────────────────────────────── */
+/*  ap  (fn-ap: position + history)                              */
+/* ───────────────────────────────────────────────────────────── */
+export function ap(params = {}) {
+  const action = params.action ?? 'position'
+  if (action === 'position') {
+    const view = params.view ?? 'aging'
+    if (view === 'aging') {
+      const buckets = [
+        { bucket: 'current', amount: 1850000, vendor_count: 80, pct: 44.6 },
+        { bucket: '1-30',    amount: 1050000, vendor_count: 52, pct: 25.3 },
+        { bucket: '31-60',   amount:  620000, vendor_count: 28, pct: 14.9 },
+        { bucket: '61-90',   amount:  340000, vendor_count: 15, pct:  8.2 },
+        { bucket: '91-120',  amount:  170000, vendor_count:  8, pct:  4.1 },
+        { bucket: '120+',    amount:  120000, vendor_count:  5, pct:  2.9 },
+      ]
+      return { result: { aging_buckets: buckets, total_open_ap: 4150000,
+        metadata: { action, view, generated_utc: now() } } }
+    }
+    if (view === 'vendor_summary') {
+      const vendors = Array.from({ length: 10 }, (_, i) => ({
+        vendor_num: 50000 + i, vendor_name: `Vendor ${i + 1}`,
+        open_amount: Math.round(500000 - i * 35000), invoice_count: 25 - i * 2,
+        days_to_pay_avg: 28 + i,
+      }))
+      return { result: { vendors, metadata: { action, view, generated_utc: now() } } }
+    }
+    return { result: { rows: [], view, metadata: { action, view } } }
+  }
+  // history
+  const metric = params.metric ?? 'vendor_concentration'
+  if (metric === 'vendor_concentration') {
+    const top = Array.from({ length: 12 }, (_, i) => ({
+      vendor_num: 50000 + i, vendor_name: `Vendor ${i + 1}`,
+      ytd_spend: Math.round(2500000 - i * 180000),
+      cumulative_pct: +(8.4 * (i + 1)).toFixed(1),
+    }))
+    return { result: { top_vendors: top, pareto_threshold_pct: params.pareto_threshold_pct ?? 80,
+      metadata: { action, metric, generated_utc: now() } } }
+  }
+  return { result: { metric, rows: [], metadata: { action, metric, generated_utc: now() } } }
+}
+
+
+/* ───────────────────────────────────────────────────────────── */
+/*  ar  (fn-ar: position + history)                              */
+/* ───────────────────────────────────────────────────────────── */
+export function ar(params = {}) {
+  const action = params.action ?? 'position'
+  if (action === 'position') {
+    const view = params.view ?? 'aging'
+    if (view === 'aging') {
+      const buckets = [
+        { bucket: 'current', amount: 4200000, customer_count: 95, pct: 60.0 },
+        { bucket: '1-30',    amount: 1450000, customer_count: 38, pct: 20.7 },
+        { bucket: '31-60',   amount:  680000, customer_count: 22, pct:  9.7 },
+        { bucket: '61-90',   amount:  340000, customer_count: 14, pct:  4.9 },
+        { bucket: '91-120',  amount:  180000, customer_count:  8, pct:  2.6 },
+        { bucket: '120+',    amount:  150000, customer_count:  6, pct:  2.1 },
+      ]
+      return { result: { aging_buckets: buckets, total_open_ar: 7000000,
+        metadata: { action, view, generated_utc: now() } } }
+    }
+    if (view === 'customer_summary') {
+      const customers = Array.from({ length: 10 }, (_, i) => ({
+        customer_num: 30000 + i, customer_name: `Customer ${i + 1}`,
+        open_amount: Math.round(800000 - i * 65000), invoice_count: 18 - i,
+        days_past_due_avg: i * 6,
+      }))
+      return { result: { customers, metadata: { action, view, generated_utc: now() } } }
+    }
+    return { result: { rows: [], view, metadata: { action, view } } }
+  }
+  // history
+  const metric = params.metric ?? 'payment_velocity'
+  const window = params.period_window ?? 12
+  const rows = Array.from({ length: window }, (_, i) => ({
+    period_seq: i + 1, period_label: `M${i + 1}`,
+    value: metric === 'payment_velocity' ? 38 + Math.sin(i) * 3
+         : metric === 'late_payment_pct' ? 12 + Math.sin(i) * 2
+         : Math.round(6000000 + Math.sin(i) * 500000),
+  }))
+  return { result: { metric, rows, metadata: { action, metric, generated_utc: now() } } }
+}
+
+
+/* ───────────────────────────────────────────────────────────── */
+/*  capex  (fn-capex: position / history / dep_forecast / scenario) */
+/* ───────────────────────────────────────────────────────────── */
+export function capex(params = {}) {
+  const action = params.action ?? 'position'
+
+  if (action === 'position') {
+    const view = params.view ?? 'by_company'
+    if (view === 'by_company') {
+      const rows = [
+        { company: '00001', name: 'US Operations',    cost_basis: 24000000, accumulated_dep: 12500000, net_book_value: 11500000, asset_count: 320 },
+        { company: '00200', name: 'EU Operations',    cost_basis:  9800000, accumulated_dep:  5300000, net_book_value:  4500000, asset_count: 145 },
+        { company: '00300', name: 'APAC Operations',  cost_basis:  6200000, accumulated_dep:  3400000, net_book_value:  2800000, asset_count:  88 },
+      ]
+      return { result: { rows, metadata: { action, view, generated_utc: now() } } }
+    }
+    if (view === 'by_category') {
+      const rows = [
+        { category: 'IT Equipment',   cost_basis: 8500000, net_book_value: 3800000, asset_count: 220 },
+        { category: 'Machinery',      cost_basis: 14000000, net_book_value: 7200000, asset_count: 145 },
+        { category: 'Buildings',      cost_basis: 12000000, net_book_value: 6500000, asset_count:  18 },
+        { category: 'Vehicles',       cost_basis: 3200000,  net_book_value: 1100000, asset_count:  62 },
+        { category: 'Furniture',      cost_basis: 2300000,  net_book_value:  200000, asset_count: 108 },
+      ]
+      return { result: { rows, metadata: { action, view, generated_utc: now() } } }
+    }
+    return { result: { rows: [], view, metadata: { action, view } } }
+  }
+
+  if (action === 'history') {
+    const metric = params.metric ?? 'spend_vs_plan'
+    if (metric === 'spend_vs_plan') {
+      const rows = Array.from({ length: 12 }, (_, i) => ({
+        period_seq: i + 1, period_label: `M${i + 1}`,
+        planned: Math.round(280000 + Math.sin(i) * 60000),
+        actual:  Math.round(260000 + Math.sin(i) * 80000),
+        variance: 0,
+      })).map(r => ({ ...r, variance: r.actual - r.planned }))
+      return { result: { metric, rows, total_planned: rows.reduce((s, r) => s + r.planned, 0),
+        total_actual: rows.reduce((s, r) => s + r.actual, 0),
+        metadata: { action, metric, generated_utc: now() } } }
+    }
+    const rows = Array.from({ length: 12 }, (_, i) => ({
+      period_seq: i + 1, period_label: `M${i + 1}`,
+      value: Math.round(180000 + Math.sin(i) * 40000),
+    }))
+    return { result: { metric, rows, metadata: { action, metric, generated_utc: now() } } }
+  }
+
+  if (action === 'depreciation_forecast') {
+    const h = params.horizon_periods ?? 12
+    const rows = Array.from({ length: h }, (_, i) => ({
+      period_seq: i + 1, period_label: `M${i + 1}`,
+      depreciation_expense: Math.round(165000 + i * 1500),
+    }))
+    return { result: { horizon_periods: h, rows,
+      total_depreciation: rows.reduce((s, r) => s + r.depreciation_expense, 0),
+      metadata: { action, generated_utc: now() } } }
+  }
+
+  if (action === 'scenario') {
+    const stype = params.scenario_type ?? 'delay'
+    const p = params.parameters ?? {}
+    const amount = p.amount ?? 5000000
+    const months = p.defer_months ?? p.acceleration_months ?? 6
+    return { result: { scenario_type: stype, amount, months,
+      baseline_npv:  amount,
+      scenario_npv:  stype === 'delay' ? Math.round(amount * 0.94) : Math.round(amount * 1.04),
+      cashflow_delta: stype === 'delay' ? -amount : +amount,
+      assumptions: { wacc_pct: 8.0 },
+      metadata: { action, generated_utc: now() } } }
+  }
+
+  return { result: { rows: [], action, metadata: { action, generated_utc: now() } } }
+}
+
+
+/* ───────────────────────────────────────────────────────────── */
+/*  balance_sheet_forecast  (composite forward projection)        */
+/* ───────────────────────────────────────────────────────────── */
+export function balanceSheetForecast(params = {}) {
+  const as_of = params.as_of_date ?? '2026-12-31'
+  return { result: {
+    as_of_date: as_of,
+    line_items: [
+      { name: 'Cash',                p50: 12400000, p10: 9800000,  p90: 15200000 },
+      { name: 'A/R',                 p50:  7200000, p10: 6400000,  p90:  8100000 },
+      { name: 'Inventory',           p50:  3400000, p10: 3100000,  p90:  3700000 },
+      { name: 'Other CA',            p50:   450000, p10:  400000,  p90:   500000 },
+      { name: 'Net Fixed Assets',    p50: 18200000, p10: 17900000, p90: 18500000 },
+      { name: 'Total Assets',        p50: 41650000, p10: 37600000, p90: 46000000 },
+      { name: 'A/P',                 p50:  4400000, p10: 3900000,  p90:  4900000 },
+      { name: 'Other CL',            p50:  2900000, p10: 2700000,  p90:  3100000 },
+      { name: 'Long-term Debt',      p50:  9500000, p10: 9500000,  p90:  9500000 },
+      { name: 'Equity',              p50: 24850000, p10: 21500000, p90: 28500000 },
+      { name: 'Total Liab+Equity',   p50: 41650000, p10: 37600000, p90: 46000000 },
+    ],
+    drift_check: { abs_imbalance: 0, balanced: true },
+    drivers: {
+      revenue_forecast_total: 48000000,
+      cogs_forecast_total:    27000000,
+      depreciation_total:     2150000,
+      net_income_estimate:    3850000,
+    },
+    metadata: { action: 'forecast', generated_utc: now() },
+  } }
+}

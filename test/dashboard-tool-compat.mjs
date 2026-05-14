@@ -19,10 +19,15 @@ const TOOLS = [
   { name: 'revenue_expense_forecast', params: { action: 'summary' } },
   { name: 'working_capital_analysis', params: { action: 'summary' } },
   { name: 'balance_sheet_risk', params: { action: 'summary' } },
+  { name: 'balance_sheet_forecast', params: { as_of_date: '2026-12-31' } },
   { name: 'model_diagnostics', params: { action: 'summary' } },
   { name: 'working_capital_analytics', params: { action: 'summary' } },
   { name: 'statistical_analytics', params: { action: 'summary' } },
   { name: 'simulation_engine', params: { action: 'history', limit: 5 } },
+  { name: 'inventory', params: { action: 'position', view: 'summary' } },
+  { name: 'ap', params: { action: 'position', view: 'aging' } },
+  { name: 'ar', params: { action: 'position', view: 'aging' } },
+  { name: 'capex', params: { action: 'position', view: 'by_company' } },
 ]
 
 async function callTool(name, params) {

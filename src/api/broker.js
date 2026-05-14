@@ -43,6 +43,16 @@ const MOCK_REGISTRY = {
   statistical_analytics:         (p) => import('../data/liveTools.js').then(m => m.statisticalAnalytics(p)),
   // NB-I: Simulation Engine
   simulation_engine:             (p) => import('../data/liveTools.js').then(m => m.simulationEngine(p)),
+  // Balance Sheet Forecast (composite forward projection)
+  balance_sheet_forecast:        (p) => import('../data/liveTools.js').then(m => m.balanceSheetForecast(p)),
+  // Inventory (fn-inventory: position + history + demand_forecast)
+  inventory:                     (p) => import('../data/liveTools.js').then(m => m.inventory(p)),
+  // AP (fn-ap: position + history)
+  ap:                            (p) => import('../data/liveTools.js').then(m => m.ap(p)),
+  // AR (fn-ar: position + history)
+  ar:                            (p) => import('../data/liveTools.js').then(m => m.ar(p)),
+  // CapEx (fn-capex: position + history + depreciation_forecast + scenario)
+  capex:                         (p) => import('../data/liveTools.js').then(m => m.capex(p)),
 }
 
 /**
